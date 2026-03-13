@@ -121,6 +121,23 @@ class TestRocheClient:
             with pytest.raises(RocheError, match="provider unavailable"):
                 client.create()
 
+    def test_create_with_env_vars(self):
+        mock_result = MagicMock()
+        mock_result.stdout = "env123\n"
+        mock_result.returncode = 0
+
+        config = SandboxConfig(env={"FOO": "bar", "DB": "localhost"})
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            sandbox_id = client.create(config)
+
+        assert sandbox_id == "env123"
+        args = mock_run.call_args[0][0]
+        assert "--env" in args
+        assert "FOO=bar" in args
+        assert "DB=localhost" in args
+
 
 class TestSandboxContextManager:
     def test_sandbox_creates_and_destroys(self):

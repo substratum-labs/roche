@@ -54,6 +54,9 @@ class Roche:
         if config.writable:
             cmd.append("--writable")
 
+        for key, value in config.env.items():
+            cmd.extend(["--env", f"{key}={value}"])
+
         result = self._run(cmd)
         return result.stdout.strip()
 
