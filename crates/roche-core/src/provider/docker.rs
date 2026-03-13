@@ -1,4 +1,4 @@
-use crate::provider::{ProviderError, SandboxProvider};
+use crate::provider::{ProviderError, SandboxLifecycle, SandboxProvider};
 use crate::types::{ExecOutput, ExecRequest, SandboxConfig, SandboxId, SandboxInfo, SandboxStatus};
 use tokio::process::Command;
 
@@ -96,6 +96,7 @@ fn build_exec_args(id: &SandboxId, request: &ExecRequest) -> Vec<String> {
 fn parse_status(state: &str) -> SandboxStatus {
     match state {
         "running" => SandboxStatus::Running,
+        "paused" => SandboxStatus::Paused,
         "exited" | "created" => SandboxStatus::Stopped,
         _ => SandboxStatus::Failed,
     }
@@ -155,10 +156,14 @@ impl SandboxProvider for DockerProvider {
         match result {
             Ok(Ok(output)) => {
                 let exit_code = output.status.code().unwrap_or(-1);
+                let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
+                if exit_code != 0 && stderr_str.contains("is paused") {
+                    return Err(ProviderError::Paused(id.clone()));
+                }
                 Ok(ExecOutput {
                     exit_code,
                     stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                    stderr: stderr_str,
                 })
             }
             Ok(Err(e)) => Err(ProviderError::ExecFailed(e.to_string())),
@@ -221,11 +226,53 @@ impl SandboxProvider for DockerProvider {
                     status: parse_status(parts.get(1).unwrap_or(&"unknown")),
                     provider: "docker".to_string(),
                     image: parts.get(2).unwrap_or(&"").to_string(),
+                    expires_at: None,
                 }
             })
             .collect();
 
         Ok(sandboxes)
+    }
+}
+
+impl SandboxLifecycle for DockerProvider {
+    async fn pause(&self, id: &SandboxId) -> Result<(), ProviderError> {
+        let output = Command::new("docker")
+            .args(["pause", id])
+            .output()
+            .await
+            .map_err(|e| ProviderError::ExecFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("No such container") {
+                return Err(ProviderError::NotFound(id.clone()));
+            }
+            return Err(ProviderError::ExecFailed(stderr.trim().to_string()));
+        }
+        Ok(())
+    }
+
+    async fn unpause(&self, id: &SandboxId) -> Result<(), ProviderError> {
+        let output = Command::new("docker")
+            .args(["unpause", id])
+            .output()
+            .await
+            .map_err(|e| ProviderError::ExecFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("No such container") {
+                return Err(ProviderError::NotFound(id.clone()));
+            }
+            return Err(ProviderError::ExecFailed(stderr.trim().to_string()));
+        }
+        Ok(())
+    }
+
+    async fn gc(&self) -> Result<Vec<SandboxId>, ProviderError> {
+        // Stub — will be implemented later
+        Ok(vec![])
     }
 }
 
@@ -280,6 +327,11 @@ mod tests {
         assert_eq!(parse_status("created"), SandboxStatus::Stopped);
         assert_eq!(parse_status("dead"), SandboxStatus::Failed);
         assert_eq!(parse_status("anything_else"), SandboxStatus::Failed);
+    }
+
+    #[test]
+    fn test_parse_status_paused() {
+        assert_eq!(parse_status("paused"), SandboxStatus::Paused);
     }
 
     #[test]
