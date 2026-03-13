@@ -47,6 +47,10 @@ enum Commands {
         #[arg(long)]
         sandbox: String,
 
+        /// Timeout override in seconds
+        #[arg(long)]
+        timeout: Option<u64>,
+
         /// Command to execute
         command: Vec<String>,
     },
@@ -58,16 +62,34 @@ enum Commands {
     },
 
     /// List active sandboxes
-    List,
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
+    let result = run(cli).await;
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+}
+
+async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
+    use roche_core::provider::docker::DockerProvider;
+    use roche_core::provider::SandboxProvider;
+    use roche_core::types::{ExecRequest, SandboxConfig};
+
+    let provider = DockerProvider::new();
+
     match cli.command {
         Commands::Create {
-            provider,
+            provider: provider_name,
             image,
             memory,
             cpus,
@@ -75,24 +97,58 @@ async fn main() {
             network,
             writable,
         } => {
-            println!(
-                "Creating sandbox: provider={provider}, image={image}, \
-                 memory={memory:?}, cpus={cpus:?}, timeout={timeout}s, \
-                 network={network}, writable={writable}"
-            );
-            todo!("wire up provider.create()")
+            let config = SandboxConfig {
+                provider: provider_name,
+                image,
+                memory,
+                cpus,
+                timeout_secs: timeout,
+                network,
+                writable,
+                ..Default::default()
+            };
+            let id = provider.create(&config).await?;
+            println!("{id}");
         }
-        Commands::Exec { sandbox, command } => {
-            println!("Executing in {sandbox}: {}", command.join(" "));
-            todo!("wire up provider.exec()")
+        Commands::Exec {
+            sandbox,
+            timeout,
+            command,
+        } => {
+            let request = ExecRequest {
+                command,
+                timeout_secs: timeout,
+            };
+            let output = provider.exec(&sandbox, &request).await?;
+            print!("{}", output.stdout);
+            eprint!("{}", output.stderr);
+            if output.exit_code != 0 {
+                std::process::exit(output.exit_code);
+            }
         }
         Commands::Destroy { id } => {
-            println!("Destroying sandbox {id}");
-            todo!("wire up provider.destroy()")
+            provider.destroy(&id).await?;
         }
-        Commands::List => {
-            println!("Listing sandboxes...");
-            todo!("wire up provider.list()")
+        Commands::List { json } => {
+            let sandboxes = provider.list().await?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&sandboxes).unwrap());
+            } else if sandboxes.is_empty() {
+                println!("No active sandboxes.");
+            } else {
+                println!("{:<16} {:<10} {:<10} IMAGE", "ID", "STATUS", "PROVIDER");
+                for sb in &sandboxes {
+                    println!(
+                        "{:<16} {:<10} {:<10} {}",
+                        sb.id,
+                        format!("{:?}", sb.status).to_lowercase(),
+                        sb.provider,
+                        sb.image,
+                    );
+                }
+            }
         }
     }
+
+    Ok(())
 }
