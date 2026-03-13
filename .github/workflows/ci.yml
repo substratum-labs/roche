@@ -6,45 +6,31 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo fmt --check
+      - run: cargo clippy -- -D warnings
+      - run: cargo build
+      - run: cargo test
 
-  fmt:
-    name: Format
+  python:
+    name: Python SDK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
         with:
-          components: rustfmt
-      - run: cargo fmt --all --check
+          python-version: "3.12"
+      - run: pip install -e "sdk/python[dev]"
+      - run: pytest sdk/python/tests/ -v
