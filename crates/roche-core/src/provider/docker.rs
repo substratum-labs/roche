@@ -1,4 +1,4 @@
-use crate::provider::{ProviderError, SandboxLifecycle, SandboxProvider};
+use crate::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
 use crate::types::{ExecOutput, ExecRequest, SandboxConfig, SandboxId, SandboxInfo, SandboxStatus};
 use tokio::process::Command;
 
@@ -76,6 +76,15 @@ fn build_create_args(config: &SandboxConfig) -> Vec<String> {
     // Environment variables
     for (k, v) in &config.env {
         args.extend(["-e".into(), format!("{k}={v}")]);
+    }
+
+    // Volume mounts
+    for mount in &config.mounts {
+        let mode = if mount.readonly { "ro" } else { "rw" };
+        args.extend([
+            "-v".into(),
+            format!("{}:{}:{}", mount.host_path, mount.container_path, mode),
+        ]);
     }
 
     // Image + keep-alive command
@@ -276,6 +285,52 @@ impl SandboxLifecycle for DockerProvider {
     }
 }
 
+impl SandboxFileOps for DockerProvider {
+    async fn copy_to(
+        &self,
+        id: &SandboxId,
+        src: &std::path::Path,
+        dest: &str,
+    ) -> Result<(), ProviderError> {
+        let output = Command::new("docker")
+            .args(["cp", &src.to_string_lossy(), &format!("{id}:{dest}")])
+            .output()
+            .await
+            .map_err(|e| ProviderError::FileFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("No such container") {
+                return Err(ProviderError::NotFound(id.clone()));
+            }
+            return Err(ProviderError::FileFailed(stderr.trim().to_string()));
+        }
+        Ok(())
+    }
+
+    async fn copy_from(
+        &self,
+        id: &SandboxId,
+        src: &str,
+        dest: &std::path::Path,
+    ) -> Result<(), ProviderError> {
+        let output = Command::new("docker")
+            .args(["cp", &format!("{id}:{src}"), &dest.to_string_lossy()])
+            .output()
+            .await
+            .map_err(|e| ProviderError::FileFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("No such container") {
+                return Err(ProviderError::NotFound(id.clone()));
+            }
+            return Err(ProviderError::FileFailed(stderr.trim().to_string()));
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,6 +403,37 @@ mod tests {
         assert_eq!(args[2], "python3");
         assert_eq!(args[3], "-c");
         assert_eq!(args[4], "print('hi')");
+    }
+
+    #[test]
+    fn test_build_create_args_with_mounts() {
+        use crate::types::MountConfig;
+        let config = SandboxConfig {
+            mounts: vec![
+                MountConfig {
+                    host_path: "/host/data".into(),
+                    container_path: "/sandbox/data".into(),
+                    readonly: true,
+                },
+                MountConfig {
+                    host_path: "/host/out".into(),
+                    container_path: "/sandbox/out".into(),
+                    readonly: false,
+                },
+            ],
+            ..Default::default()
+        };
+        let args = build_create_args(&config);
+
+        let v_positions: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "-v")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(v_positions.len(), 2);
+        assert_eq!(args[v_positions[0] + 1], "/host/data:/sandbox/data:ro");
+        assert_eq!(args[v_positions[1] + 1], "/host/out:/sandbox/out:rw");
     }
 
     #[test]

@@ -43,6 +43,10 @@ enum Commands {
         /// Environment variables (KEY=VALUE, repeatable)
         #[arg(long = "env", value_name = "KEY=VALUE")]
         env: Vec<String>,
+
+        /// Volume mounts (host:container[:ro|rw], repeatable)
+        #[arg(long = "mount", value_name = "HOST:CONTAINER[:ro|rw]")]
+        mounts: Vec<String>,
     },
 
     /// Execute a command in a sandbox
@@ -66,11 +70,31 @@ enum Commands {
         id: String,
     },
 
+    /// Pause a sandbox (freeze all processes)
+    Pause {
+        /// Sandbox ID
+        id: String,
+    },
+
+    /// Unpause a sandbox
+    Unpause {
+        /// Sandbox ID
+        id: String,
+    },
+
     /// List active sandboxes
     List {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+    },
+
+    /// Copy files between host and sandbox
+    Cp {
+        /// Source path (local path or sandbox_id:/path)
+        src: String,
+        /// Destination path (local path or sandbox_id:/path)
+        dest: String,
     },
 }
 
@@ -97,9 +121,39 @@ fn parse_env_vars(pairs: &[String]) -> Result<std::collections::HashMap<String, 
         .collect()
 }
 
+fn parse_mount(s: &str) -> Result<roche_core::types::MountConfig, String> {
+    let parts: Vec<&str> = s.splitn(3, ':').collect();
+    match parts.len() {
+        2 => Ok(roche_core::types::MountConfig {
+            host_path: parts[0].to_string(),
+            container_path: parts[1].to_string(),
+            readonly: true,
+        }),
+        3 => {
+            let readonly = match parts[2] {
+                "ro" => true,
+                "rw" => false,
+                other => return Err(format!("invalid mount mode: {other} (expected ro or rw)")),
+            };
+            Ok(roche_core::types::MountConfig {
+                host_path: parts[0].to_string(),
+                container_path: parts[1].to_string(),
+                readonly,
+            })
+        }
+        _ => Err(format!(
+            "invalid mount format: {s} (expected host:container[:ro|rw])"
+        )),
+    }
+}
+
+fn parse_cp_path(s: &str) -> Option<(&str, &str)> {
+    s.split_once(':')
+}
+
 async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
     use roche_core::provider::docker::DockerProvider;
-    use roche_core::provider::SandboxProvider;
+    use roche_core::provider::{SandboxLifecycle, SandboxProvider};
     use roche_core::types::{ExecRequest, SandboxConfig};
 
     let provider = DockerProvider::new();
@@ -114,6 +168,7 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
             network,
             writable,
             env,
+            mounts,
         } => {
             let env_map = parse_env_vars(&env)
                 .map_err(|e| {
@@ -121,6 +176,15 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
                     std::process::exit(1);
                 })
                 .unwrap();
+            let mount_configs: Vec<_> = mounts
+                .iter()
+                .map(|s| {
+                    parse_mount(s).unwrap_or_else(|e| {
+                        eprintln!("Error: {e}");
+                        std::process::exit(1);
+                    })
+                })
+                .collect();
             let config = SandboxConfig {
                 provider: provider_name,
                 image,
@@ -130,6 +194,7 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
                 network,
                 writable,
                 env: env_map,
+                mounts: mount_configs,
             };
             let id = provider.create(&config).await?;
             println!("{id}");
@@ -153,6 +218,12 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
         Commands::Destroy { id } => {
             provider.destroy(&id).await?;
         }
+        Commands::Pause { id } => {
+            provider.pause(&id).await?;
+        }
+        Commands::Unpause { id } => {
+            provider.unpause(&id).await?;
+        }
         Commands::List { json } => {
             let sandboxes = provider.list().await?;
             if json {
@@ -172,6 +243,32 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
                 }
             }
         }
+        Commands::Cp { src, dest } => {
+            use roche_core::provider::SandboxFileOps;
+
+            match (parse_cp_path(&src), parse_cp_path(&dest)) {
+                (Some((sandbox_id, sandbox_path)), None) => {
+                    let id = sandbox_id.to_string();
+                    provider
+                        .copy_from(&id, sandbox_path, std::path::Path::new(&dest))
+                        .await?;
+                }
+                (None, Some((sandbox_id, sandbox_path))) => {
+                    let id = sandbox_id.to_string();
+                    provider
+                        .copy_to(&id, std::path::Path::new(&src), sandbox_path)
+                        .await?;
+                }
+                (Some(_), Some(_)) => {
+                    eprintln!("Error: both source and destination cannot be sandbox paths");
+                    std::process::exit(1);
+                }
+                (None, None) => {
+                    eprintln!("Error: one of source or destination must be a sandbox path (sandbox_id:/path)");
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 
     Ok(())
@@ -179,7 +276,7 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_env_vars;
+    use super::{parse_cp_path, parse_env_vars, parse_mount};
 
     #[test]
     fn test_parse_env_vars_happy_path() {
@@ -208,5 +305,34 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result.get("FOO").unwrap(), "bar");
         assert_eq!(result.get("BAZ").unwrap(), "qux");
+    }
+
+    #[test]
+    fn test_parse_mount_with_mode() {
+        let m = parse_mount("/host:/container:rw").unwrap();
+        assert_eq!(m.host_path, "/host");
+        assert_eq!(m.container_path, "/container");
+        assert!(!m.readonly);
+    }
+
+    #[test]
+    fn test_parse_mount_default_readonly() {
+        let m = parse_mount("/host:/container").unwrap();
+        assert!(m.readonly);
+    }
+
+    #[test]
+    fn test_parse_mount_invalid() {
+        assert!(parse_mount("nocolon").is_err());
+        assert!(parse_mount("/host:/container:xx").is_err());
+    }
+
+    #[test]
+    fn test_parse_cp_path() {
+        assert_eq!(
+            parse_cp_path("abc123:/app/file"),
+            Some(("abc123", "/app/file"))
+        );
+        assert_eq!(parse_cp_path("./local.txt"), None);
     }
 }
