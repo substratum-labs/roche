@@ -47,6 +47,10 @@ enum Commands {
         /// Volume mounts (host:container[:ro|rw], repeatable)
         #[arg(long = "mount", value_name = "HOST:CONTAINER[:ro|rw]")]
         mounts: Vec<String>,
+
+        /// Number of sandboxes to create
+        #[arg(long, default_value = "1")]
+        count: u32,
     },
 
     /// Execute a command in a sandbox
@@ -64,10 +68,15 @@ enum Commands {
         command: Vec<String>,
     },
 
-    /// Destroy a sandbox
+    /// Destroy sandboxes
     Destroy {
-        /// Sandbox ID
-        id: String,
+        /// Sandbox IDs (one or more)
+        #[arg(required_unless_present = "all")]
+        ids: Vec<String>,
+
+        /// Destroy ALL roche-managed sandboxes
+        #[arg(long)]
+        all: bool,
     },
 
     /// Pause a sandbox (freeze all processes)
@@ -180,6 +189,7 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
             writable,
             env,
             mounts,
+            count,
         } => {
             let env_map = parse_env_vars(&env)
                 .map_err(|e| {
@@ -207,8 +217,12 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
                 env: env_map,
                 mounts: mount_configs,
             };
-            let id = provider.create(&config).await?;
-            println!("{id}");
+            for _ in 0..count {
+                match provider.create(&config).await {
+                    Ok(id) => println!("{id}"),
+                    Err(e) => eprintln!("Error: {e}"),
+                }
+            }
         }
         Commands::Exec {
             sandbox,
@@ -226,8 +240,18 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
                 std::process::exit(output.exit_code);
             }
         }
-        Commands::Destroy { id } => {
-            provider.destroy(&id).await?;
+        Commands::Destroy { ids, all } => {
+            let targets = if all {
+                provider.list().await?.into_iter().map(|sb| sb.id).collect()
+            } else {
+                ids
+            };
+            for id in &targets {
+                match provider.destroy(id).await {
+                    Ok(()) => {}
+                    Err(e) => eprintln!("Error destroying {id}: {e}"),
+                }
+            }
         }
         Commands::Pause { id } => {
             provider.pause(&id).await?;
