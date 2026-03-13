@@ -22,9 +22,7 @@ impl DockerProvider {
             .status()
             .await
             .map_err(|_| {
-                ProviderError::Unavailable(
-                    "Docker is not installed or not in PATH".into(),
-                )
+                ProviderError::Unavailable("Docker is not installed or not in PATH".into())
             })?;
 
         if !output.success() {
@@ -92,6 +90,15 @@ fn build_exec_args(id: &SandboxId, request: &ExecRequest) -> Vec<String> {
     let mut args = vec!["exec".to_string(), id.clone()];
     args.extend(request.command.clone());
     args
+}
+
+/// Map Docker container state string to SandboxStatus.
+fn parse_status(state: &str) -> SandboxStatus {
+    match state {
+        "running" => SandboxStatus::Running,
+        "exited" | "created" => SandboxStatus::Stopped,
+        _ => SandboxStatus::Failed,
+    }
 }
 
 impl SandboxProvider for DockerProvider {
@@ -185,7 +192,40 @@ impl SandboxProvider for DockerProvider {
     }
 
     async fn list(&self) -> Result<Vec<SandboxInfo>, ProviderError> {
-        todo!("docker list implementation")
+        let output = Command::new("docker")
+            .args([
+                "ps",
+                "-a",
+                "--filter",
+                "label=roche.managed=true",
+                "--format",
+                "{{.ID}}\t{{.State}}\t{{.Image}}",
+            ])
+            .output()
+            .await
+            .map_err(|e| ProviderError::Unavailable(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ProviderError::Unavailable(stderr.trim().to_string()));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let sandboxes = stdout
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                let parts: Vec<&str> = line.split('\t').collect();
+                SandboxInfo {
+                    id: parts.first().unwrap_or(&"").to_string(),
+                    status: parse_status(parts.get(1).unwrap_or(&"unknown")),
+                    provider: "docker".to_string(),
+                    image: parts.get(2).unwrap_or(&"").to_string(),
+                }
+            })
+            .collect();
+
+        Ok(sandboxes)
     }
 }
 
@@ -222,13 +262,24 @@ mod tests {
         let args = build_create_args(&config);
 
         // Should NOT have --network none
-        let has_network_none = args.windows(2).any(|w| w[0] == "--network" && w[1] == "none");
+        let has_network_none = args
+            .windows(2)
+            .any(|w| w[0] == "--network" && w[1] == "none");
         assert!(!has_network_none);
         assert!(!args.contains(&"--read-only".to_string()));
         assert!(args.contains(&"--memory".to_string()));
         assert!(args.contains(&"512m".to_string()));
         assert!(args.contains(&"--cpus".to_string()));
         assert!(args.contains(&"1.5".to_string()));
+    }
+
+    #[test]
+    fn test_parse_status() {
+        assert_eq!(parse_status("running"), SandboxStatus::Running);
+        assert_eq!(parse_status("exited"), SandboxStatus::Stopped);
+        assert_eq!(parse_status("created"), SandboxStatus::Stopped);
+        assert_eq!(parse_status("dead"), SandboxStatus::Failed);
+        assert_eq!(parse_status("anything_else"), SandboxStatus::Failed);
     }
 
     #[test]
