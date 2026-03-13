@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "roche-python"
+version = "0.1.0"
+description = "Universal sandbox orchestrator for AI agents — Python SDK"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+readme = "README.md"
+
+[project.urls]
+Homepage = "https://github.com/substratum-labs/roche"
+Repository = "https://github.com/substratum-labs/roche"
