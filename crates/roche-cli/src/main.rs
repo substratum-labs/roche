@@ -52,6 +52,7 @@ enum Commands {
         timeout: Option<u64>,
 
         /// Command to execute
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
 
