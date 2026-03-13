@@ -39,6 +39,10 @@ enum Commands {
         /// Enable writable filesystem (default: readonly for safety)
         #[arg(long)]
         writable: bool,
+
+        /// Environment variables (KEY=VALUE, repeatable)
+        #[arg(long = "env", value_name = "KEY=VALUE")]
+        env: Vec<String>,
     },
 
     /// Execute a command in a sandbox
@@ -81,6 +85,18 @@ async fn main() {
     }
 }
 
+fn parse_env_vars(pairs: &[String]) -> Result<std::collections::HashMap<String, String>, String> {
+    pairs
+        .iter()
+        .map(|s| {
+            let (k, v) = s
+                .split_once('=')
+                .ok_or_else(|| format!("invalid env format: {s} (expected KEY=VALUE)"))?;
+            Ok((k.to_string(), v.to_string()))
+        })
+        .collect()
+}
+
 async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
     use roche_core::provider::docker::DockerProvider;
     use roche_core::provider::SandboxProvider;
@@ -97,7 +113,12 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
             timeout,
             network,
             writable,
+            env,
         } => {
+            let env_map = parse_env_vars(&env).map_err(|e| {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }).unwrap();
             let config = SandboxConfig {
                 provider: provider_name,
                 image,
@@ -106,6 +127,7 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
                 timeout_secs: timeout,
                 network,
                 writable,
+                env: env_map,
                 ..Default::default()
             };
             let id = provider.create(&config).await?;
@@ -152,4 +174,38 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_env_vars;
+
+    #[test]
+    fn test_parse_env_vars_happy_path() {
+        let input = vec!["FOO=bar".to_string()];
+        let result = parse_env_vars(&input).unwrap();
+        assert_eq!(result.get("FOO").unwrap(), "bar");
+    }
+
+    #[test]
+    fn test_parse_env_vars_value_with_equals() {
+        let input = vec!["A=b=c".to_string()];
+        let result = parse_env_vars(&input).unwrap();
+        assert_eq!(result.get("A").unwrap(), "b=c");
+    }
+
+    #[test]
+    fn test_parse_env_vars_malformed() {
+        let input = vec!["NOEQUALS".to_string()];
+        assert!(parse_env_vars(&input).is_err());
+    }
+
+    #[test]
+    fn test_parse_env_vars_multiple() {
+        let input = vec!["FOO=bar".to_string(), "BAZ=qux".to_string()];
+        let result = parse_env_vars(&input).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.get("FOO").unwrap(), "bar");
+        assert_eq!(result.get("BAZ").unwrap(), "qux");
+    }
 }
