@@ -266,7 +266,10 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
             } else if sandboxes.is_empty() {
                 println!("No active sandboxes.");
             } else {
-                println!("{:<16} {:<10} {:<10} {:<10} IMAGE", "ID", "STATUS", "PROVIDER", "EXPIRES");
+                println!(
+                    "{:<16} {:<10} {:<10} {:<10} IMAGE",
+                    "ID", "STATUS", "PROVIDER", "EXPIRES"
+                );
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()

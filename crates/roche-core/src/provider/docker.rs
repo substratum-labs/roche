@@ -77,7 +77,8 @@ fn build_create_args(config: &SandboxConfig) -> Vec<String> {
     let expires = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_secs() + config.timeout_secs;
+        .as_secs()
+        + config.timeout_secs;
     args.extend(["--label".into(), format!("roche.expires={expires}")]);
 
     // Environment variables
@@ -289,9 +290,12 @@ impl SandboxLifecycle for DockerProvider {
     async fn gc(&self) -> Result<Vec<SandboxId>, ProviderError> {
         let output = Command::new("docker")
             .args([
-                "ps", "-a",
-                "--filter", "label=roche.managed=true",
-                "--format", "{{.ID}}\t{{index .Labels \"roche.expires\"}}",
+                "ps",
+                "-a",
+                "--filter",
+                "label=roche.managed=true",
+                "--format",
+                "{{.ID}}\t{{index .Labels \"roche.expires\"}}",
             ])
             .output()
             .await
@@ -484,13 +488,15 @@ mod tests {
         let config = SandboxConfig::default();
         let args = build_create_args(&config);
 
-        let label_positions: Vec<usize> = args.iter()
+        let label_positions: Vec<usize> = args
+            .iter()
             .enumerate()
             .filter(|(_, a)| *a == "--label")
             .map(|(i, _)| i)
             .collect();
 
-        let expires_label = label_positions.iter()
+        let expires_label = label_positions
+            .iter()
             .find(|&&i| args[i + 1].starts_with("roche.expires="))
             .expect("should have roche.expires label");
 
