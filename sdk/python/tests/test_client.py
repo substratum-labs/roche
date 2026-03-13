@@ -158,3 +158,176 @@ class TestSandboxContextManager:
         sb = Sandbox(client)
         with pytest.raises(RocheError, match="not created"):
             _ = sb.id
+
+
+class TestNewFeatures:
+    def test_create_with_mounts(self):
+        from roche import Mount
+
+        mock_result = MagicMock()
+        mock_result.stdout = "mount123\n"
+        mock_result.returncode = 0
+
+        config = SandboxConfig(mounts=[
+            Mount("/host/data", "/sandbox/data"),
+            Mount("/host/out", "/sandbox/out", readonly=False),
+        ])
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            sandbox_id = client.create(config)
+
+        assert sandbox_id == "mount123"
+        args = mock_run.call_args[0][0]
+        assert "--mount" in args
+        assert "/host/data:/sandbox/data:ro" in args
+        assert "/host/out:/sandbox/out:rw" in args
+
+    def test_copy_to(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            client.copy_to("abc123", "./local.py", "/app/local.py")
+
+        args = mock_run.call_args[0][0]
+        assert "cp" in args
+        assert "./local.py" in args
+        assert "abc123:/app/local.py" in args
+
+    def test_copy_from(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            client.copy_from("abc123", "/app/result.json", "./result.json")
+
+        args = mock_run.call_args[0][0]
+        assert "cp" in args
+        assert "abc123:/app/result.json" in args
+        assert "./result.json" in args
+
+    def test_pause(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            client.pause("abc123")
+
+        args = mock_run.call_args[0][0]
+        assert "pause" in args
+        assert "abc123" in args
+
+    def test_unpause(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            client.unpause("abc123")
+
+        args = mock_run.call_args[0][0]
+        assert "unpause" in args
+        assert "abc123" in args
+
+    def test_gc(self):
+        mock_result = MagicMock()
+        mock_result.stdout = "destroyed: abc123\ndestroyed: def456\n"
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            client.gc()
+
+        args = mock_run.call_args[0][0]
+        assert "gc" in args
+        assert "--dry-run" not in args
+
+    def test_gc_dry_run(self):
+        mock_result = MagicMock()
+        mock_result.stdout = "abc123\ndef456\n"
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            client.gc(dry_run=True)
+
+        args = mock_run.call_args[0][0]
+        assert "gc" in args
+        assert "--dry-run" in args
+
+    def test_create_many(self):
+        mock_result = MagicMock()
+        mock_result.stdout = "id1\nid2\nid3\n"
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            ids = client.create_many(count=3)
+
+        assert ids == ["id1", "id2", "id3"]
+        args = mock_run.call_args[0][0]
+        assert "--count" in args
+        assert "3" in args
+
+    def test_destroy_many(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            client.destroy_many(["id1", "id2"])
+
+        args = mock_run.call_args[0][0]
+        assert "destroy" in args
+        assert "id1" in args
+        assert "id2" in args
+
+    def test_destroy_all(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            client.destroy_all()
+
+        args = mock_run.call_args[0][0]
+        assert "destroy" in args
+        assert "--all" in args
+
+    def test_sandbox_pause_unpause(self):
+        mock_create = MagicMock()
+        mock_create.stdout = "sandbox123\n"
+        mock_create.returncode = 0
+
+        mock_op = MagicMock()
+        mock_op.returncode = 0
+
+        mock_destroy = MagicMock()
+        mock_destroy.returncode = 0
+
+        with patch("subprocess.run", side_effect=[mock_create, mock_op, mock_op, mock_destroy]):
+            client = Roche()
+            with Sandbox(client) as sb:
+                sb.pause()
+                sb.unpause()
+
+    def test_sandbox_copy_to_from(self):
+        mock_create = MagicMock()
+        mock_create.stdout = "sandbox123\n"
+        mock_create.returncode = 0
+
+        mock_cp = MagicMock()
+        mock_cp.returncode = 0
+
+        mock_destroy = MagicMock()
+        mock_destroy.returncode = 0
+
+        with patch("subprocess.run", side_effect=[mock_create, mock_cp, mock_cp, mock_destroy]):
+            client = Roche()
+            with Sandbox(client) as sb:
+                sb.copy_to("./local.py", "/app/local.py")
+                sb.copy_from("/app/result.json", "./result.json")

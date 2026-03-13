@@ -17,6 +17,7 @@ class SandboxConfig:
     network: bool = False
     writable: bool = False
     env: dict[str, str] = field(default_factory=dict)
+    mounts: list[Mount] = field(default_factory=list)
 
 
 @dataclass
@@ -26,3 +27,12 @@ class ExecOutput:
     exit_code: int
     stdout: str
     stderr: str
+
+
+@dataclass
+class Mount:
+    """Volume mount configuration."""
+
+    host_path: str
+    container_path: str
+    readonly: bool = True  # AI-safe default
