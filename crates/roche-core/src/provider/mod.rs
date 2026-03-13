@@ -38,4 +38,46 @@ pub enum ProviderError {
 
     #[error("timeout after {0}s")]
     Timeout(u64),
+
+    #[error("operation not supported by this provider: {0}")]
+    Unsupported(String),
+
+    #[error("file operation failed: {0}")]
+    FileFailed(String),
+
+    #[error("sandbox is paused: {0}")]
+    Paused(SandboxId),
+}
+
+/// File operations capability — not all providers support this.
+#[allow(async_fn_in_trait)]
+pub trait SandboxFileOps {
+    /// Copy a file from host to sandbox.
+    async fn copy_to(
+        &self,
+        id: &SandboxId,
+        src: &std::path::Path,
+        dest: &str,
+    ) -> Result<(), ProviderError>;
+
+    /// Copy a file from sandbox to host.
+    async fn copy_from(
+        &self,
+        id: &SandboxId,
+        src: &str,
+        dest: &std::path::Path,
+    ) -> Result<(), ProviderError>;
+}
+
+/// Lifecycle management capability — not all providers support this.
+#[allow(async_fn_in_trait)]
+pub trait SandboxLifecycle {
+    /// Pause a sandbox (freeze all processes).
+    async fn pause(&self, id: &SandboxId) -> Result<(), ProviderError>;
+
+    /// Unpause a sandbox.
+    async fn unpause(&self, id: &SandboxId) -> Result<(), ProviderError>;
+
+    /// Garbage collect: destroy all expired sandboxes. Returns IDs of destroyed sandboxes.
+    async fn gc(&self) -> Result<Vec<SandboxId>, ProviderError>;
 }

@@ -35,6 +35,19 @@ pub struct SandboxConfig {
     /// Environment variables.
     #[serde(default)]
     pub env: HashMap<String, String>,
+
+    /// Volume mounts.
+    #[serde(default)]
+    pub mounts: Vec<MountConfig>,
+}
+
+/// Configuration for a volume mount.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MountConfig {
+    pub host_path: String,
+    pub container_path: String,
+    /// Default: true (readonly, AI-safe).
+    pub readonly: bool,
 }
 
 fn default_image() -> String {
@@ -56,6 +69,7 @@ impl Default for SandboxConfig {
             network: false,
             writable: false,
             env: HashMap::new(),
+            mounts: Vec::new(),
         }
     }
 }
@@ -65,6 +79,7 @@ impl Default for SandboxConfig {
 #[serde(rename_all = "lowercase")]
 pub enum SandboxStatus {
     Running,
+    Paused,
     Stopped,
     Failed,
 }
@@ -76,6 +91,7 @@ pub struct SandboxInfo {
     pub status: SandboxStatus,
     pub provider: String,
     pub image: String,
+    pub expires_at: Option<u64>,
 }
 
 /// Request to execute a command inside a sandbox.
