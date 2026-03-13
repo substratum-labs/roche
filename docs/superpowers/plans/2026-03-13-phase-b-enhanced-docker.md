@@ -72,7 +72,7 @@ pub struct SandboxInfo {
 - [ ] **Step 5: Verify it compiles**
 
 Run: `cargo build 2>&1`
-Expected: Compilation may fail in `docker.rs` because `SandboxInfo` construction is missing `expires_at`. That's expected — we'll fix it in Task 3.
+Expected: Compilation will fail in both `docker.rs` (missing `expires_at` in `SandboxInfo`) and `main.rs` (missing `mounts` in `SandboxConfig` struct literal). That's expected — we'll fix `docker.rs` in Task 3 and `main.rs` in Task 6. Until then, individual crate tests still work.
 
 - [ ] **Step 6: Commit**
 
@@ -222,7 +222,15 @@ In the `list` method, update the `SandboxInfo` construction to include `expires_
                 }
 ```
 
-- [ ] **Step 5: Implement SandboxLifecycle for DockerProvider (pause/unpause only, gc stub)**
+- [ ] **Step 5: Add use import for SandboxLifecycle**
+
+Update the import at the top of `docker.rs`:
+
+```rust
+use crate::provider::{ProviderError, SandboxProvider, SandboxLifecycle};
+```
+
+- [ ] **Step 6: Implement SandboxLifecycle for DockerProvider (pause/unpause only, gc stub)**
 
 Add after the `SandboxProvider` impl block:
 
@@ -269,14 +277,6 @@ impl SandboxLifecycle for DockerProvider {
 }
 ```
 
-- [ ] **Step 6: Add use import for SandboxLifecycle**
-
-At the top of `docker.rs`, add to the existing import:
-
-```rust
-use crate::provider::{ProviderError, SandboxProvider, SandboxLifecycle};
-```
-
 - [ ] **Step 7: Run all tests**
 
 Run: `cargo test -p roche-core 2>&1`
@@ -292,6 +292,44 @@ Expected: No warnings.
 ```bash
 git add crates/roche-core/src/provider/docker.rs
 git commit -m "feat: implement pause/unpause for DockerProvider"
+```
+
+---
+
+### Task 3b: Detect paused sandbox in exec
+
+**Files:**
+- Modify: `crates/roche-core/src/provider/docker.rs`
+
+- [ ] **Step 1: Update exec to detect paused sandbox**
+
+In `DockerProvider::exec()`, update the error handling after getting the command output. In the `Ok(Ok(output))` branch, before returning `ExecOutput`, check for the paused case:
+
+```rust
+            Ok(Ok(output)) => {
+                let exit_code = output.status.code().unwrap_or(-1);
+                let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
+                if exit_code != 0 && stderr_str.contains("is paused") {
+                    return Err(ProviderError::Paused(id.clone()));
+                }
+                Ok(ExecOutput {
+                    exit_code,
+                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                    stderr: stderr_str,
+                })
+            }
+```
+
+- [ ] **Step 2: Run tests and clippy**
+
+Run: `cargo test -p roche-core 2>&1 && cargo clippy -- -D warnings 2>&1`
+Expected: All pass.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add crates/roche-core/src/provider/docker.rs
+git commit -m "feat: detect paused sandbox in exec and return ProviderError::Paused"
 ```
 
 ---
@@ -427,7 +465,15 @@ In `build_create_args`, add after the environment variables loop and before the 
 Run: `cargo test -p roche-core test_build_create_args_with_mounts 2>&1`
 Expected: PASS
 
-- [ ] **Step 5: Implement SandboxFileOps for DockerProvider**
+- [ ] **Step 5: Add use import for SandboxFileOps**
+
+Update the import at the top of `docker.rs`:
+
+```rust
+use crate::provider::{ProviderError, SandboxProvider, SandboxLifecycle, SandboxFileOps};
+```
+
+- [ ] **Step 6: Implement SandboxFileOps for DockerProvider**
 
 Add after the `SandboxLifecycle` impl block:
 
@@ -477,14 +523,6 @@ impl SandboxFileOps for DockerProvider {
         Ok(())
     }
 }
-```
-
-- [ ] **Step 6: Add use import for SandboxFileOps**
-
-Update the import at the top of `docker.rs`:
-
-```rust
-use crate::provider::{ProviderError, SandboxProvider, SandboxLifecycle, SandboxFileOps};
 ```
 
 - [ ] **Step 7: Run all tests and clippy**
@@ -1180,6 +1218,20 @@ class TestNewFeatures:
 
         args = mock_run.call_args[0][0]
         assert "gc" in args
+        assert "--dry-run" not in args
+
+    def test_gc_dry_run(self):
+        mock_result = MagicMock()
+        mock_result.stdout = "abc123\ndef456\n"
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            client = Roche()
+            client.gc(dry_run=True)
+
+        args = mock_run.call_args[0][0]
+        assert "gc" in args
+        assert "--dry-run" in args
 
     def test_create_many(self):
         mock_result = MagicMock()
@@ -1281,9 +1333,12 @@ In `client.py`, add to the `Roche` class after `list()`:
         """Unpause a sandbox."""
         self._run(["unpause", sandbox_id])
 
-    def gc(self) -> None:
+    def gc(self, dry_run: bool = False) -> None:
         """Garbage collect expired sandboxes."""
-        self._run(["gc"])
+        cmd = ["gc"]
+        if dry_run:
+            cmd.append("--dry-run")
+        self._run(cmd)
 
     def create_many(self, config: SandboxConfig | None = None, count: int = 1) -> list[str]:
         """Create multiple sandboxes. Returns list of sandbox IDs."""
