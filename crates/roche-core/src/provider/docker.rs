@@ -87,6 +87,13 @@ fn build_create_args(config: &SandboxConfig) -> Vec<String> {
     args
 }
 
+/// Build the argument list for `docker exec`.
+fn build_exec_args(id: &SandboxId, request: &ExecRequest) -> Vec<String> {
+    let mut args = vec!["exec".to_string(), id.clone()];
+    args.extend(request.command.clone());
+    args
+}
+
 impl SandboxProvider for DockerProvider {
     async fn create(&self, config: &SandboxConfig) -> Result<SandboxId, ProviderError> {
         Self::check_available().await?;
@@ -126,10 +133,30 @@ impl SandboxProvider for DockerProvider {
 
     async fn exec(
         &self,
-        _id: &SandboxId,
-        _request: &ExecRequest,
+        id: &SandboxId,
+        request: &ExecRequest,
     ) -> Result<ExecOutput, ProviderError> {
-        todo!("docker exec implementation")
+        let args = build_exec_args(id, request);
+        let timeout_secs = request.timeout_secs.unwrap_or(300);
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            Command::new("docker").args(&args).output(),
+        )
+        .await;
+
+        match result {
+            Ok(Ok(output)) => {
+                let exit_code = output.status.code().unwrap_or(-1);
+                Ok(ExecOutput {
+                    exit_code,
+                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                })
+            }
+            Ok(Err(e)) => Err(ProviderError::ExecFailed(e.to_string())),
+            Err(_) => Err(ProviderError::Timeout(timeout_secs)),
+        }
     }
 
     async fn destroy(&self, _id: &SandboxId) -> Result<(), ProviderError> {
@@ -181,6 +208,22 @@ mod tests {
         assert!(args.contains(&"512m".to_string()));
         assert!(args.contains(&"--cpus".to_string()));
         assert!(args.contains(&"1.5".to_string()));
+    }
+
+    #[test]
+    fn test_build_exec_args() {
+        let id = "abc123def456".to_string();
+        let request = ExecRequest {
+            command: vec!["python3".into(), "-c".into(), "print('hi')".into()],
+            timeout_secs: None,
+        };
+        let args = build_exec_args(&id, &request);
+
+        assert_eq!(args[0], "exec");
+        assert_eq!(args[1], "abc123def456");
+        assert_eq!(args[2], "python3");
+        assert_eq!(args[3], "-c");
+        assert_eq!(args[4], "print('hi')");
     }
 
     #[test]
