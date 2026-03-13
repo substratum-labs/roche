@@ -115,10 +115,12 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
             writable,
             env,
         } => {
-            let env_map = parse_env_vars(&env).map_err(|e| {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }).unwrap();
+            let env_map = parse_env_vars(&env)
+                .map_err(|e| {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                })
+                .unwrap();
             let config = SandboxConfig {
                 provider: provider_name,
                 image,
@@ -128,7 +130,6 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
                 network,
                 writable,
                 env: env_map,
-                ..Default::default()
             };
             let id = provider.create(&config).await?;
             println!("{id}");
