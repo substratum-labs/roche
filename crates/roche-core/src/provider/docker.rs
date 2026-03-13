@@ -73,6 +73,13 @@ fn build_create_args(config: &SandboxConfig) -> Vec<String> {
     // Roche management labels
     args.extend(["--label".into(), "roche.managed=true".into()]);
 
+    // Expiry timestamp
+    let expires = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() + config.timeout_secs;
+    args.extend(["--label".into(), format!("roche.expires={expires}")]);
+
     // Environment variables
     for (k, v) in &config.env {
         args.extend(["-e".into(), format!("{k}={v}")]);
@@ -213,7 +220,7 @@ impl SandboxProvider for DockerProvider {
                 "--filter",
                 "label=roche.managed=true",
                 "--format",
-                "{{.ID}}\t{{.State}}\t{{.Image}}",
+                "{{.ID}}\t{{.State}}\t{{.Image}}\t{{index .Labels \"roche.expires\"}}",
             ])
             .output()
             .await
@@ -235,7 +242,7 @@ impl SandboxProvider for DockerProvider {
                     status: parse_status(parts.get(1).unwrap_or(&"unknown")),
                     provider: "docker".to_string(),
                     image: parts.get(2).unwrap_or(&"").to_string(),
-                    expires_at: None,
+                    expires_at: parts.get(3).and_then(|s| s.parse::<u64>().ok()),
                 }
             })
             .collect();
@@ -280,8 +287,44 @@ impl SandboxLifecycle for DockerProvider {
     }
 
     async fn gc(&self) -> Result<Vec<SandboxId>, ProviderError> {
-        // Stub — will be implemented later
-        Ok(vec![])
+        let output = Command::new("docker")
+            .args([
+                "ps", "-a",
+                "--filter", "label=roche.managed=true",
+                "--format", "{{.ID}}\t{{index .Labels \"roche.expires\"}}",
+            ])
+            .output()
+            .await
+            .map_err(|e| ProviderError::Unavailable(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ProviderError::Unavailable(stderr.trim().to_string()));
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut destroyed = Vec::new();
+
+        for line in stdout.lines().filter(|l| !l.is_empty()) {
+            let parts: Vec<&str> = line.split('\t').collect();
+            let id = parts.first().unwrap_or(&"").to_string();
+            let expires = parts.get(1).and_then(|s| s.parse::<u64>().ok());
+
+            if let Some(exp) = expires {
+                if exp <= now {
+                    if let Ok(()) = self.destroy(&id).await {
+                        destroyed.push(id);
+                    }
+                }
+            }
+        }
+
+        Ok(destroyed)
     }
 }
 
@@ -434,6 +477,34 @@ mod tests {
         assert_eq!(v_positions.len(), 2);
         assert_eq!(args[v_positions[0] + 1], "/host/data:/sandbox/data:ro");
         assert_eq!(args[v_positions[1] + 1], "/host/out:/sandbox/out:rw");
+    }
+
+    #[test]
+    fn test_build_create_args_has_expires_label() {
+        let config = SandboxConfig::default();
+        let args = build_create_args(&config);
+
+        let label_positions: Vec<usize> = args.iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "--label")
+            .map(|(i, _)| i)
+            .collect();
+
+        let expires_label = label_positions.iter()
+            .find(|&&i| args[i + 1].starts_with("roche.expires="))
+            .expect("should have roche.expires label");
+
+        let value: u64 = args[*expires_label + 1]
+            .strip_prefix("roche.expires=")
+            .unwrap()
+            .parse()
+            .expect("expires should be a unix timestamp");
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(value >= now + 295 && value <= now + 305);
     }
 
     #[test]

@@ -89,6 +89,17 @@ enum Commands {
         json: bool,
     },
 
+    /// Garbage collect expired sandboxes
+    Gc {
+        /// Only list expired sandboxes, don't destroy
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Destroy ALL roche-managed sandboxes (ignore expiry)
+        #[arg(long)]
+        all: bool,
+    },
+
     /// Copy files between host and sandbox
     Cp {
         /// Source path (local path or sandbox_id:/path)
@@ -231,15 +242,64 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
             } else if sandboxes.is_empty() {
                 println!("No active sandboxes.");
             } else {
-                println!("{:<16} {:<10} {:<10} IMAGE", "ID", "STATUS", "PROVIDER");
+                println!("{:<16} {:<10} {:<10} {:<10} IMAGE", "ID", "STATUS", "PROVIDER", "EXPIRES");
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
                 for sb in &sandboxes {
+                    let expires_str = match sb.expires_at {
+                        Some(exp) if exp > now => {
+                            let remaining = exp - now;
+                            let mins = remaining / 60;
+                            let secs = remaining % 60;
+                            format!("{mins}m{secs:02}s")
+                        }
+                        Some(_) => "expired".to_string(),
+                        None => "-".to_string(),
+                    };
                     println!(
-                        "{:<16} {:<10} {:<10} {}",
+                        "{:<16} {:<10} {:<10} {:<10} {}",
                         sb.id,
                         format!("{:?}", sb.status).to_lowercase(),
                         sb.provider,
+                        expires_str,
                         sb.image,
                     );
+                }
+            }
+        }
+        Commands::Gc { dry_run, all } => {
+            if all {
+                let sandboxes = provider.list().await?;
+                for sb in &sandboxes {
+                    if dry_run {
+                        println!("{}", sb.id);
+                    } else {
+                        provider.destroy(&sb.id).await?;
+                        println!("destroyed: {}", sb.id);
+                    }
+                }
+            } else if dry_run {
+                let sandboxes = provider.list().await?;
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                for sb in &sandboxes {
+                    if let Some(exp) = sb.expires_at {
+                        if exp <= now {
+                            println!("{}", sb.id);
+                        }
+                    }
+                }
+            } else {
+                let destroyed = provider.gc().await?;
+                for id in &destroyed {
+                    println!("destroyed: {id}");
+                }
+                if destroyed.is_empty() {
+                    println!("No expired sandboxes found.");
                 }
             }
         }
