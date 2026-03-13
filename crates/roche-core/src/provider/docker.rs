@@ -159,8 +159,29 @@ impl SandboxProvider for DockerProvider {
         }
     }
 
-    async fn destroy(&self, _id: &SandboxId) -> Result<(), ProviderError> {
-        todo!("docker destroy implementation")
+    async fn destroy(&self, id: &SandboxId) -> Result<(), ProviderError> {
+        // Graceful stop first (ignore errors — container may already be stopped)
+        let _ = Command::new("docker")
+            .args(["stop", "-t", "5", id])
+            .output()
+            .await;
+
+        // Force remove
+        let output = Command::new("docker")
+            .args(["rm", "-f", id])
+            .output()
+            .await
+            .map_err(|e| ProviderError::ExecFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("No such container") {
+                return Err(ProviderError::NotFound(id.clone()));
+            }
+            return Err(ProviderError::ExecFailed(stderr.trim().to_string()));
+        }
+
+        Ok(())
     }
 
     async fn list(&self) -> Result<Vec<SandboxInfo>, ProviderError> {
