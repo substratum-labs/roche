@@ -10,6 +10,12 @@ license = "Apache-2.0"
 requires-python = ">=3.10"
 readme = "README.md"
 
+[tool.hatch.build.targets.wheel]
+packages = ["roche"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
 [project.urls]
 Homepage = "https://github.com/substratum-labs/roche"
 Repository = "https://github.com/substratum-labs/roche"
