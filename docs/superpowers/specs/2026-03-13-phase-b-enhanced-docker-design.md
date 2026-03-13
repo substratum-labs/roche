@@ -79,6 +79,7 @@ pub enum ProviderError {
 
 **Files touched:**
 - `crates/roche-core/src/provider/mod.rs` — add traits and error variants
+- `crates/roche-core/src/lib.rs` — re-export new traits (`SandboxFileOps`, `SandboxLifecycle`)
 
 ---
 
@@ -108,7 +109,7 @@ Cp {
 }
 ```
 
-**Path parsing:** `split_once(':')` determines which side is sandbox. If `src` contains `:`, call `copy_from`; if `dest` contains `:`, call `copy_to`. Both or neither having `:` is an error.
+**Path parsing:** `split_once(':')` determines which side is sandbox. If `src` contains `:`, call `copy_from`; if `dest` contains `:`, call `copy_to`. Both or neither having `:` is a CLI validation error (clap error, not `ProviderError`).
 
 **Implementation:** `DockerProvider::copy_to` runs `docker cp <host_path> <container_id>:<container_path>`. `copy_from` runs `docker cp <container_id>:<container_path> <host_path>`.
 
@@ -194,7 +195,7 @@ roche gc --all        # Destroy ALL roche-managed sandboxes (regardless of expir
 ```
 
 **Implementation:**
-1. Query Docker: `docker ps -a --filter label=roche.managed=true --format "{{.ID}}\t{{.Label \"roche.expires\"}}"`
+1. Query Docker: `docker ps -a --filter label=roche.managed=true --format "{{.ID}}\t{{index .Labels \"roche.expires\"}}"`
 2. Parse each container's `roche.expires` label, compare to current time
 3. Destroy expired containers via existing `destroy` method
 4. Return list of destroyed sandbox IDs
@@ -214,11 +215,11 @@ Gc {
 }
 ```
 
-`--dry-run` and `--all` are CLI-layer concerns, not in the trait. The trait's `gc()` always destroys expired sandboxes.
+`--dry-run` and `--all` are CLI-layer concerns, not in the trait. The trait's `gc()` always destroys expired sandboxes. For `--all`, the CLI calls `list()` to get all IDs, then `destroy()` on each — it does not go through `gc()`.
 
 ### `list` Enhancement
 
-`SandboxInfo` gains `expires_at: Option<u64>`. `roche list` shows remaining time:
+`SandboxInfo` gains `expires_at: Option<u64>`. The `list` implementation's Docker format string is updated to include the expires label: `"{{.ID}}\t{{.State}}\t{{.Image}}\t{{index .Labels \"roche.expires\"}}"`. `roche list` shows remaining time:
 
 ```
 ID               STATUS     PROVIDER   EXPIRES    IMAGE
@@ -265,7 +266,7 @@ pub enum SandboxStatus {
 
 `parse_status` maps Docker's `"paused"` state to `SandboxStatus::Paused`.
 
-Executing `exec` on a paused sandbox returns `ProviderError::Paused(id)`.
+Executing `exec` on a paused sandbox returns `ProviderError::Paused(id)`. Detection: Docker's `docker exec` on a paused container returns an error containing "is paused". `DockerProvider::exec()` parses the stderr and maps it to `ProviderError::Paused`.
 
 ### Python SDK
 
@@ -314,6 +315,8 @@ roche destroy --all            # All roche-managed sandboxes
 
 Current `destroy` accepts a single ID. Change to accept `Vec<String>`. `--all` calls `list()` to get all IDs, then destroys each.
 
+**Note:** `destroy --all` and `gc --all` both remove all managed sandboxes. The distinction: `gc` is the cleanup-oriented command (default: only expired; `--all` overrides). `destroy` is the explicit removal command (requires IDs or `--all`). Both are useful in different mental models.
+
 **CLI definition changes:**
 
 ```rust
@@ -336,6 +339,8 @@ ids = client.create_many(config, count=5)   # Returns list[str]
 client.destroy_many(["id1", "id2", "id3"])
 client.destroy_all()
 ```
+
+**Python SDK implementation:** `create_many` calls `roche create --count N` once and parses the multi-line output (one ID per line). `destroy_many` calls `roche destroy id1 id2 ...` in a single subprocess call. `destroy_all` calls `roche destroy --all`.
 
 ### Testing
 
