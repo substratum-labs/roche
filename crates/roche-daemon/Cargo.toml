@@ -11,7 +11,7 @@ name = "roche-daemon"
 path = "src/main.rs"
 
 [dependencies]
-roche-core = { path = "../roche-core" }
+roche-core = { path = "../roche-core", features = ["wasmtime"] }
 tonic = "0.12"
 prost = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }

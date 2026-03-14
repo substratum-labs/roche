@@ -11,7 +11,7 @@ name = "roche"
 path = "src/main.rs"
 
 [dependencies]
-roche-core = { path = "../roche-core" }
+roche-core = { path = "../roche-core", features = ["wasmtime"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde_json = "1"

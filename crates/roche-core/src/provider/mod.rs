@@ -1,5 +1,7 @@
 pub mod docker;
 pub mod firecracker;
+#[cfg(feature = "wasmtime")]
+pub mod wasm;
 
 use crate::types::{ExecOutput, ExecRequest, SandboxConfig, SandboxId, SandboxInfo};
 

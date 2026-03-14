@@ -762,6 +762,11 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
             let provider = FirecrackerProvider::new()?;
             run_provider_commands!(provider, cli.command)
         }
+        "wasm" => {
+            use roche_core::provider::wasm::WasmProvider;
+            let provider = WasmProvider::new()?;
+            run_provider_commands!(provider, cli.command)
+        }
         _ => {
             // Handle Cp specially since it requires SandboxFileOps (Docker-only)
             if let Commands::Cp { ref src, ref dest } = cli.command {

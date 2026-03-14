@@ -17,6 +17,11 @@ http-body-util = "0.1"
 uuid = { version = "1", features = ["v4"] }
 nix = { version = "0.29", features = ["signal", "process"] }
 dirs = "6"
+wasmtime = { version = "29", optional = true }
+wasmtime-wasi = { version = "29", optional = true }
+
+[features]
+wasmtime = ["dep:wasmtime", "dep:wasmtime-wasi"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tokio-vsock = "0.6"

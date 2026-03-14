@@ -2,6 +2,7 @@ use crate::proto;
 use roche_core::provider::docker::DockerProvider;
 #[cfg(target_os = "linux")]
 use roche_core::provider::firecracker::FirecrackerProvider;
+use roche_core::provider::wasm::WasmProvider;
 use roche_core::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
 use roche_core::types::{self, SandboxStatus};
 use tonic::{Request, Response, Status};
@@ -10,6 +11,7 @@ pub struct SandboxServiceImpl {
     docker: DockerProvider,
     #[cfg(target_os = "linux")]
     firecracker: Option<FirecrackerProvider>,
+    wasm: Option<WasmProvider>,
 }
 
 impl SandboxServiceImpl {
@@ -18,6 +20,7 @@ impl SandboxServiceImpl {
             docker: DockerProvider::new(),
             #[cfg(target_os = "linux")]
             firecracker: FirecrackerProvider::new().ok(),
+            wasm: WasmProvider::new().ok(),
         }
     }
 }
@@ -70,6 +73,13 @@ macro_rules! with_provider {
                     $body
                 } else {
                     Err(Status::unavailable("Firecracker provider not available"))
+                }
+            }
+            "wasm" => {
+                if let Some(ref $p) = $self.wasm {
+                    $body
+                } else {
+                    Err(Status::unavailable("WASM provider not available"))
                 }
             }
             _ => {
