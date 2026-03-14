@@ -49,29 +49,27 @@ pub async fn exec_via_vsock(
         .map_err(|e| ProviderError::ExecFailed(format!("vsock flush: {e}")))?;
 
     // Read response: 4-byte big-endian length + JSON
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(timeout_secs),
-        async {
-            let mut len_buf = [0u8; 4];
-            reader.read_exact(&mut len_buf).await.map_err(|e| {
-                ProviderError::ExecFailed(format!("vsock read response len: {e}"))
-            })?;
-            let resp_len = u32::from_be_bytes(len_buf) as usize;
-            if resp_len > 64 * 1024 * 1024 {
-                return Err(ProviderError::ExecFailed(
-                    "response too large (>64MB)".into(),
-                ));
-            }
-            let mut resp_buf = vec![0u8; resp_len];
-            reader.read_exact(&mut resp_buf).await.map_err(|e| {
-                ProviderError::ExecFailed(format!("vsock read response: {e}"))
-            })?;
-            let output: ExecOutput = serde_json::from_slice(&resp_buf).map_err(|e| {
-                ProviderError::ExecFailed(format!("parse response: {e}"))
-            })?;
-            Ok(output)
-        },
-    )
+    let result = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), async {
+        let mut len_buf = [0u8; 4];
+        reader
+            .read_exact(&mut len_buf)
+            .await
+            .map_err(|e| ProviderError::ExecFailed(format!("vsock read response len: {e}")))?;
+        let resp_len = u32::from_be_bytes(len_buf) as usize;
+        if resp_len > 64 * 1024 * 1024 {
+            return Err(ProviderError::ExecFailed(
+                "response too large (>64MB)".into(),
+            ));
+        }
+        let mut resp_buf = vec![0u8; resp_len];
+        reader
+            .read_exact(&mut resp_buf)
+            .await
+            .map_err(|e| ProviderError::ExecFailed(format!("vsock read response: {e}")))?;
+        let output: ExecOutput = serde_json::from_slice(&resp_buf)
+            .map_err(|e| ProviderError::ExecFailed(format!("parse response: {e}")))?;
+        Ok(output)
+    })
     .await
     .map_err(|_| ProviderError::Timeout(timeout_secs))?;
 

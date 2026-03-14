@@ -188,8 +188,13 @@ impl SandboxProvider for FirecrackerProvider {
 
         try_api!(api.put_boot_source(kernel, boot_args).await);
         try_api!(
-            api.put_drive("rootfs", &rootfs_copy.to_string_lossy(), true, !config.writable)
-                .await
+            api.put_drive(
+                "rootfs",
+                &rootfs_copy.to_string_lossy(),
+                true,
+                !config.writable
+            )
+            .await
         );
         try_api!(api.put_machine_config(vcpus, mem_mib).await);
         try_api!(api.put_vsock(cid).await);
@@ -301,10 +306,8 @@ impl SandboxLifecycle for FirecrackerProvider {
         let mut destroyed = Vec::new();
         for info in infos {
             if let Some(exp) = info.expires_at {
-                if exp <= now {
-                    if self.destroy(&info.id).await.is_ok() {
-                        destroyed.push(info.id);
-                    }
+                if exp <= now && self.destroy(&info.id).await.is_ok() {
+                    destroyed.push(info.id);
                 }
             }
         }

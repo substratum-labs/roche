@@ -383,9 +383,7 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
                             .await?;
                     }
                     (Some(_), Some(_)) => {
-                        eprintln!(
-                            "Error: both source and destination cannot be sandbox paths"
-                        );
+                        eprintln!("Error: both source and destination cannot be sandbox paths");
                         std::process::exit(1);
                     }
                     (None, None) => {

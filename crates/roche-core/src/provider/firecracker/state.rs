@@ -74,8 +74,9 @@ impl StateManager {
     /// Write VM metadata to disk.
     pub fn write_metadata(&self, metadata: &VmMetadata) -> Result<(), ProviderError> {
         let path = self.metadata_path(&metadata.id);
-        let json = serde_json::to_string_pretty(metadata)
-            .map_err(|e| ProviderError::CreateFailed(format!("failed to serialize metadata: {e}")))?;
+        let json = serde_json::to_string_pretty(metadata).map_err(|e| {
+            ProviderError::CreateFailed(format!("failed to serialize metadata: {e}"))
+        })?;
         std::fs::write(&path, json)
             .map_err(|e| ProviderError::CreateFailed(format!("failed to write metadata: {e}")))?;
         Ok(())
@@ -84,8 +85,8 @@ impl StateManager {
     /// Read VM metadata from disk.
     pub fn read_metadata(&self, id: &str) -> Result<VmMetadata, ProviderError> {
         let path = self.metadata_path(id);
-        let json = std::fs::read_to_string(&path)
-            .map_err(|_| ProviderError::NotFound(id.to_string()))?;
+        let json =
+            std::fs::read_to_string(&path).map_err(|_| ProviderError::NotFound(id.to_string()))?;
         serde_json::from_str(&json)
             .map_err(|e| ProviderError::ExecFailed(format!("corrupt metadata: {e}")))
     }
@@ -209,8 +210,14 @@ mod tests {
     fn test_path_helpers() {
         let (mgr, tmp) = temp_state_manager();
         let base = tmp.path();
-        assert_eq!(mgr.socket_path("vm1"), base.join("vm1").join("firecracker.sock"));
+        assert_eq!(
+            mgr.socket_path("vm1"),
+            base.join("vm1").join("firecracker.sock")
+        );
         assert_eq!(mgr.rootfs_path("vm1"), base.join("vm1").join("rootfs.ext4"));
-        assert_eq!(mgr.metadata_path("vm1"), base.join("vm1").join("metadata.json"));
+        assert_eq!(
+            mgr.metadata_path("vm1"),
+            base.join("vm1").join("metadata.json")
+        );
     }
 }
