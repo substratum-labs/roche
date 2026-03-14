@@ -239,9 +239,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
                 let sandboxes = p.list().await.map_err(provider_error_to_status)?;
                 let mut destroyed = Vec::new();
                 for sb in &sandboxes {
-                    if req.dry_run {
-                        destroyed.push(sb.id.clone());
-                    } else if p.destroy(&sb.id).await.is_ok() {
+                    if req.dry_run || p.destroy(&sb.id).await.is_ok() {
                         destroyed.push(sb.id.clone());
                     }
                 }
@@ -316,10 +314,7 @@ mod tests {
                 ProviderError::CreateFailed("x".into()),
                 tonic::Code::Internal,
             ),
-            (
-                ProviderError::ExecFailed("x".into()),
-                tonic::Code::Internal,
-            ),
+            (ProviderError::ExecFailed("x".into()), tonic::Code::Internal),
             (
                 ProviderError::Unavailable("x".into()),
                 tonic::Code::Unavailable,
@@ -329,10 +324,7 @@ mod tests {
                 ProviderError::Unsupported("x".into()),
                 tonic::Code::Unimplemented,
             ),
-            (
-                ProviderError::FileFailed("x".into()),
-                tonic::Code::Internal,
-            ),
+            (ProviderError::FileFailed("x".into()), tonic::Code::Internal),
             (
                 ProviderError::Paused("x".into()),
                 tonic::Code::FailedPrecondition,

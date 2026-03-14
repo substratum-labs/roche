@@ -15,3 +15,11 @@ roche-core = { path = "../roche-core" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde_json = "1"
+tonic = "0.12"
+prost = "0.13"
+dirs = "6"
+serde = { version = "1", features = ["derive"] }
+libc = "0.2"
+
+[build-dependencies]
+tonic-build = "0.12"

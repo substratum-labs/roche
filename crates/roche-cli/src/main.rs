@@ -1,11 +1,19 @@
 use clap::{Parser, Subcommand};
 
+pub mod proto {
+    tonic::include_proto!("roche.v1");
+}
+
 #[derive(Parser)]
 #[command(name = "roche", about = "Universal sandbox orchestrator for AI agents")]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+
+    /// Force direct provider access (skip daemon even if running)
+    #[arg(long, global = true)]
+    direct: bool,
 }
 
 #[derive(Subcommand)]
@@ -124,6 +132,30 @@ enum Commands {
         /// Destination path (local path or sandbox_id:/path)
         dest: String,
     },
+
+    /// Manage the roche daemon
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonAction,
+    },
+}
+
+#[derive(Subcommand, Clone)]
+enum DaemonAction {
+    /// Start the daemon
+    Start {
+        /// Port to listen on
+        #[arg(long, default_value = "50051")]
+        port: u16,
+
+        /// Run in foreground (don't daemonize)
+        #[arg(long)]
+        foreground: bool,
+    },
+    /// Stop the running daemon
+    Stop,
+    /// Show daemon status
+    Status,
 }
 
 #[tokio::main]
@@ -177,6 +209,360 @@ fn parse_mount(s: &str) -> Result<roche_core::types::MountConfig, String> {
 
 fn parse_cp_path(s: &str) -> Option<(&str, &str)> {
     s.split_once(':')
+}
+
+// --- Daemon helpers ---
+
+fn daemon_json_path() -> std::path::PathBuf {
+    dirs::home_dir()
+        .expect("cannot find home directory")
+        .join(".roche")
+        .join("daemon.json")
+}
+
+#[derive(serde::Deserialize)]
+struct DaemonInfo {
+    pid: u32,
+    port: u16,
+}
+
+fn read_daemon_info() -> Option<DaemonInfo> {
+    let path = daemon_json_path();
+    let json = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&json).ok()
+}
+
+fn is_process_alive(pid: u32) -> bool {
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+async fn handle_daemon(action: DaemonAction) -> Result<(), roche_core::provider::ProviderError> {
+    use roche_core::provider::ProviderError;
+
+    match action {
+        DaemonAction::Start { port, foreground } => {
+            if let Some(info) = read_daemon_info() {
+                if is_process_alive(info.pid) {
+                    eprintln!(
+                        "Daemon already running (pid={}, port={})",
+                        info.pid, info.port
+                    );
+                    std::process::exit(1);
+                }
+            }
+
+            if foreground {
+                let status = tokio::process::Command::new("roche-daemon")
+                    .arg("--port")
+                    .arg(port.to_string())
+                    .status()
+                    .await
+                    .map_err(|e| {
+                        ProviderError::ExecFailed(format!("failed to start daemon: {e}"))
+                    })?;
+                std::process::exit(status.code().unwrap_or(1));
+            } else {
+                let roche_dir = dirs::home_dir()
+                    .expect("cannot find home directory")
+                    .join(".roche");
+                std::fs::create_dir_all(&roche_dir)
+                    .map_err(|e| ProviderError::ExecFailed(e.to_string()))?;
+                let log_file = std::fs::File::create(roche_dir.join("daemon.log"))
+                    .map_err(|e| ProviderError::ExecFailed(e.to_string()))?;
+                let err_file = log_file
+                    .try_clone()
+                    .map_err(|e| ProviderError::ExecFailed(e.to_string()))?;
+
+                let child = std::process::Command::new("roche-daemon")
+                    .arg("--port")
+                    .arg(port.to_string())
+                    .stdout(log_file)
+                    .stderr(err_file)
+                    .spawn()
+                    .map_err(|e| {
+                        ProviderError::ExecFailed(format!("failed to start daemon: {e}"))
+                    })?;
+
+                println!("Daemon started (pid={}, port={})", child.id(), port);
+            }
+        }
+        DaemonAction::Stop => {
+            let info = read_daemon_info()
+                .ok_or_else(|| ProviderError::ExecFailed("No daemon running".to_string()))?;
+            if !is_process_alive(info.pid) {
+                let _ = std::fs::remove_file(daemon_json_path());
+                eprintln!("No daemon running (stale pid file cleaned up)");
+                std::process::exit(1);
+            }
+            unsafe {
+                libc::kill(info.pid as i32, libc::SIGTERM);
+            }
+            println!("Daemon stopped (pid={})", info.pid);
+        }
+        DaemonAction::Status => match read_daemon_info() {
+            Some(info) if is_process_alive(info.pid) => {
+                println!("Daemon running (pid={}, port={})", info.pid, info.port);
+            }
+            Some(info) => {
+                let _ = std::fs::remove_file(daemon_json_path());
+                println!("Daemon not running (stale pid={}, cleaned up)", info.pid);
+            }
+            None => {
+                println!("Daemon not running");
+            }
+        },
+    }
+    Ok(())
+}
+
+// --- gRPC client dispatch ---
+
+async fn try_daemon_dispatch(cli: &Cli) -> Option<Result<(), roche_core::provider::ProviderError>> {
+    if cli.direct {
+        return None;
+    }
+
+    let info = read_daemon_info()?;
+    if !is_process_alive(info.pid) {
+        return None;
+    }
+
+    let addr = format!("http://127.0.0.1:{}", info.port);
+    let mut client = proto::sandbox_service_client::SandboxServiceClient::connect(addr)
+        .await
+        .ok()?;
+
+    Some(run_via_grpc(&mut client, &cli.command).await)
+}
+
+async fn run_via_grpc(
+    client: &mut proto::sandbox_service_client::SandboxServiceClient<tonic::transport::Channel>,
+    command: &Commands,
+) -> Result<(), roche_core::provider::ProviderError> {
+    use roche_core::provider::ProviderError;
+
+    match command {
+        Commands::Create {
+            provider,
+            image,
+            memory,
+            cpus,
+            timeout,
+            network,
+            writable,
+            env,
+            mounts,
+            count,
+            kernel,
+            rootfs,
+        } => {
+            let env_map = parse_env_vars(env).map_err(ProviderError::ExecFailed)?;
+            let mount_configs: Vec<proto::MountConfig> = mounts
+                .iter()
+                .map(|s| {
+                    let m = parse_mount(s).unwrap_or_else(|e| {
+                        eprintln!("Error: {e}");
+                        std::process::exit(1);
+                    });
+                    proto::MountConfig {
+                        host_path: m.host_path,
+                        container_path: m.container_path,
+                        readonly: m.readonly,
+                    }
+                })
+                .collect();
+
+            for _ in 0..*count {
+                let resp = client
+                    .create(proto::CreateRequest {
+                        provider: provider.clone(),
+                        image: image.clone(),
+                        memory: memory.clone(),
+                        cpus: *cpus,
+                        timeout_secs: *timeout,
+                        network: *network,
+                        writable: *writable,
+                        env: env_map.clone(),
+                        mounts: mount_configs.clone(),
+                        kernel: kernel.clone(),
+                        rootfs: rootfs.clone(),
+                    })
+                    .await
+                    .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+                println!("{}", resp.into_inner().sandbox_id);
+            }
+        }
+        Commands::Exec {
+            sandbox,
+            timeout,
+            command,
+        } => {
+            let resp = client
+                .exec(proto::ExecRequest {
+                    sandbox_id: sandbox.clone(),
+                    command: command.clone(),
+                    timeout_secs: *timeout,
+                    provider: "docker".to_string(),
+                })
+                .await
+                .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+            let output = resp.into_inner();
+            print!("{}", output.stdout);
+            eprint!("{}", output.stderr);
+            if output.exit_code != 0 {
+                std::process::exit(output.exit_code);
+            }
+        }
+        Commands::Destroy { ids, all } => {
+            client
+                .destroy(proto::DestroyRequest {
+                    sandbox_ids: ids.clone(),
+                    all: *all,
+                    provider: "docker".to_string(),
+                })
+                .await
+                .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+        }
+        Commands::List { json } => {
+            let resp = client
+                .list(proto::ListRequest {
+                    provider: "docker".to_string(),
+                })
+                .await
+                .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+            let sandboxes = resp.into_inner().sandboxes;
+            if *json {
+                let json_val: Vec<serde_json::Value> = sandboxes
+                    .iter()
+                    .map(|sb| {
+                        serde_json::json!({
+                            "id": sb.id,
+                            "status": match sb.status {
+                                1 => "running",
+                                2 => "paused",
+                                3 => "stopped",
+                                4 => "failed",
+                                _ => "unknown",
+                            },
+                            "provider": sb.provider,
+                            "image": sb.image,
+                            "expires_at": sb.expires_at,
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&json_val).unwrap());
+            } else if sandboxes.is_empty() {
+                println!("No active sandboxes.");
+            } else {
+                println!(
+                    "{:<16} {:<10} {:<10} {:<10} IMAGE",
+                    "ID", "STATUS", "PROVIDER", "EXPIRES"
+                );
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                for sb in &sandboxes {
+                    let status_str = match sb.status {
+                        1 => "running",
+                        2 => "paused",
+                        3 => "stopped",
+                        4 => "failed",
+                        _ => "unknown",
+                    };
+                    let expires_str = match sb.expires_at {
+                        Some(exp) if exp > now => {
+                            let remaining = exp - now;
+                            let mins = remaining / 60;
+                            let secs = remaining % 60;
+                            format!("{mins}m{secs:02}s")
+                        }
+                        Some(_) => "expired".to_string(),
+                        None => "-".to_string(),
+                    };
+                    println!(
+                        "{:<16} {:<10} {:<10} {:<10} {}",
+                        sb.id, status_str, sb.provider, expires_str, sb.image,
+                    );
+                }
+            }
+        }
+        Commands::Pause { id } => {
+            client
+                .pause(proto::PauseRequest {
+                    sandbox_id: id.clone(),
+                    provider: "docker".to_string(),
+                })
+                .await
+                .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+        }
+        Commands::Unpause { id } => {
+            client
+                .unpause(proto::UnpauseRequest {
+                    sandbox_id: id.clone(),
+                    provider: "docker".to_string(),
+                })
+                .await
+                .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+        }
+        Commands::Gc { dry_run, all } => {
+            let resp = client
+                .gc(proto::GcRequest {
+                    dry_run: *dry_run,
+                    all: *all,
+                    provider: "docker".to_string(),
+                })
+                .await
+                .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+            let destroyed = resp.into_inner().destroyed_ids;
+            for id in &destroyed {
+                if *dry_run {
+                    println!("{id}");
+                } else {
+                    println!("destroyed: {id}");
+                }
+            }
+            if destroyed.is_empty() && !*dry_run {
+                println!("No expired sandboxes found.");
+            }
+        }
+        Commands::Cp { src, dest } => {
+            match (parse_cp_path(src), parse_cp_path(dest)) {
+                (Some((sandbox_id, sandbox_path)), None) => {
+                    client
+                        .copy_from(proto::CopyFromRequest {
+                            sandbox_id: sandbox_id.to_string(),
+                            sandbox_path: sandbox_path.to_string(),
+                            host_path: dest.clone(),
+                            provider: "docker".to_string(),
+                        })
+                        .await
+                        .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+                }
+                (None, Some((sandbox_id, sandbox_path))) => {
+                    client
+                        .copy_to(proto::CopyToRequest {
+                            sandbox_id: sandbox_id.to_string(),
+                            host_path: src.clone(),
+                            sandbox_path: sandbox_path.to_string(),
+                            provider: "docker".to_string(),
+                        })
+                        .await
+                        .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+                }
+                (Some(_), Some(_)) => {
+                    eprintln!("Error: both source and destination cannot be sandbox paths");
+                    std::process::exit(1);
+                }
+                (None, None) => {
+                    eprintln!("Error: one of source or destination must be a sandbox path (sandbox_id:/path)");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Commands::Daemon { .. } => unreachable!("daemon handled earlier"),
+    }
+    Ok(())
 }
 
 /// Run shared commands that work with any provider implementing SandboxProvider + SandboxLifecycle.
@@ -343,6 +729,7 @@ macro_rules! run_provider_commands {
                 eprintln!("Error: file copy is only supported with the docker provider");
                 std::process::exit(1);
             }
+            Commands::Daemon { .. } => unreachable!("daemon handled earlier"),
         }
         Ok(())
     }};
@@ -353,6 +740,17 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
     use roche_core::provider::firecracker::FirecrackerProvider;
     use roche_core::provider::{SandboxLifecycle, SandboxProvider};
 
+    // Handle daemon subcommand first
+    if let Commands::Daemon { ref action } = cli.command {
+        return handle_daemon(action.clone()).await;
+    }
+
+    // Try daemon gRPC dispatch
+    if let Some(result) = try_daemon_dispatch(&cli).await {
+        return result;
+    }
+
+    // Fall through to direct provider access
     // Determine provider from the Create command, default to docker for others
     let provider_name = match &cli.command {
         Commands::Create { provider, .. } => provider.clone(),
