@@ -1,4 +1,5 @@
 pub mod docker;
+pub mod firecracker;
 
 use crate::types::{ExecOutput, ExecRequest, SandboxConfig, SandboxId, SandboxInfo};
 
