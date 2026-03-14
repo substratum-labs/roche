@@ -216,6 +216,8 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
                 writable,
                 env: env_map,
                 mounts: mount_configs,
+                kernel: None,
+                rootfs: None,
             };
             for _ in 0..count {
                 match provider.create(&config).await {
