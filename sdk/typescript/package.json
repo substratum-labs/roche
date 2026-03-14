@@ -1,0 +1,28 @@
+{
+  "name": "roche-sandbox",
+  "version": "0.1.0",
+  "description": "Universal sandbox orchestrator for AI agents — TypeScript SDK",
+  "license": "Apache-2.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "proto:gen": "bash scripts/proto-gen.sh",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.0"
+  },
+  "devDependencies": {
+    "ts-proto": "^1.176.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0",
+    "@types/node": "^20.0.0"
+  }
+}
