@@ -1,0 +1,130 @@
+syntax = "proto3";
+package roche.v1;
+
+service SandboxService {
+  rpc Create(CreateRequest) returns (CreateResponse);
+  rpc Exec(ExecRequest) returns (ExecResponse);
+  rpc Destroy(DestroyRequest) returns (DestroyResponse);
+  rpc List(ListRequest) returns (ListResponse);
+  rpc Pause(PauseRequest) returns (PauseResponse);
+  rpc Unpause(UnpauseRequest) returns (UnpauseResponse);
+  rpc Gc(GcRequest) returns (GcResponse);
+  rpc CopyTo(CopyToRequest) returns (CopyToResponse);
+  rpc CopyFrom(CopyFromRequest) returns (CopyFromResponse);
+}
+
+// Note: proto3 bool defaults to false, which intentionally aligns with
+// AI-safe defaults (network=off, writable=off). timeout_secs=0 means
+// "use server default (300s)".
+message CreateRequest {
+  string provider = 1;
+  string image = 2;
+  optional string memory = 3;
+  optional double cpus = 4;
+  uint64 timeout_secs = 5;
+  bool network = 6;
+  bool writable = 7;
+  map<string, string> env = 8;
+  repeated MountConfig mounts = 9;
+  optional string kernel = 10;
+  optional string rootfs = 11;
+}
+
+message CreateResponse {
+  string sandbox_id = 1;
+}
+
+message ExecRequest {
+  string sandbox_id = 1;
+  repeated string command = 2;
+  optional uint64 timeout_secs = 3;
+  string provider = 4;
+}
+
+message ExecResponse {
+  int32 exit_code = 1;
+  string stdout = 2;
+  string stderr = 3;
+}
+
+message DestroyRequest {
+  repeated string sandbox_ids = 1;
+  bool all = 2;
+  string provider = 3;
+}
+
+message DestroyResponse {
+  repeated string destroyed_ids = 1;
+}
+
+message ListRequest {
+  string provider = 1;
+}
+
+message ListResponse {
+  repeated SandboxInfo sandboxes = 1;
+}
+
+message PauseRequest {
+  string sandbox_id = 1;
+  string provider = 2;
+}
+
+message PauseResponse {}
+
+message UnpauseRequest {
+  string sandbox_id = 1;
+  string provider = 2;
+}
+
+message UnpauseResponse {}
+
+message GcRequest {
+  bool dry_run = 1;
+  bool all = 2;
+  string provider = 3;
+}
+
+message GcResponse {
+  repeated string destroyed_ids = 1;
+}
+
+message CopyToRequest {
+  string sandbox_id = 1;
+  string host_path = 2;
+  string sandbox_path = 3;
+  string provider = 4;
+}
+
+message CopyToResponse {}
+
+message CopyFromRequest {
+  string sandbox_id = 1;
+  string sandbox_path = 2;
+  string host_path = 3;
+  string provider = 4;
+}
+
+message CopyFromResponse {}
+
+message MountConfig {
+  string host_path = 1;
+  string container_path = 2;
+  bool readonly = 3;
+}
+
+enum SandboxStatus {
+  SANDBOX_STATUS_UNSPECIFIED = 0;
+  SANDBOX_STATUS_RUNNING = 1;
+  SANDBOX_STATUS_PAUSED = 2;
+  SANDBOX_STATUS_STOPPED = 3;
+  SANDBOX_STATUS_FAILED = 4;
+}
+
+message SandboxInfo {
+  string id = 1;
+  SandboxStatus status = 2;
+  string provider = 3;
+  string image = 4;
+  optional uint64 expires_at = 5;
+}
