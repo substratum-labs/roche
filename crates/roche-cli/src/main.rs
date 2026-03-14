@@ -51,6 +51,14 @@ enum Commands {
         /// Number of sandboxes to create
         #[arg(long, default_value = "1")]
         count: u32,
+
+        /// Path to kernel image (required for firecracker provider)
+        #[arg(long)]
+        kernel: Option<String>,
+
+        /// Path to rootfs image (required for firecracker provider)
+        #[arg(long)]
+        rootfs: Option<String>,
     },
 
     /// Execute a command in a sandbox
@@ -109,7 +117,7 @@ enum Commands {
         all: bool,
     },
 
-    /// Copy files between host and sandbox
+    /// Copy files between host and sandbox (Docker only)
     Cp {
         /// Source path (local path or sandbox_id:/path)
         src: String,
@@ -171,196 +179,227 @@ fn parse_cp_path(s: &str) -> Option<(&str, &str)> {
     s.split_once(':')
 }
 
-async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
-    use roche_core::provider::docker::DockerProvider;
-    use roche_core::provider::{SandboxLifecycle, SandboxProvider};
-    use roche_core::types::{ExecRequest, SandboxConfig};
-
-    let provider = DockerProvider::new();
-
-    match cli.command {
-        Commands::Create {
-            provider: provider_name,
-            image,
-            memory,
-            cpus,
-            timeout,
-            network,
-            writable,
-            env,
-            mounts,
-            count,
-        } => {
-            let env_map = parse_env_vars(&env)
-                .map_err(|e| {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                })
-                .unwrap();
-            let mount_configs: Vec<_> = mounts
-                .iter()
-                .map(|s| {
-                    parse_mount(s).unwrap_or_else(|e| {
-                        eprintln!("Error: {e}");
-                        std::process::exit(1);
-                    })
-                })
-                .collect();
-            let config = SandboxConfig {
+/// Run shared commands that work with any provider implementing SandboxProvider + SandboxLifecycle.
+macro_rules! run_provider_commands {
+    ($provider:expr, $command:expr) => {{
+        let provider = $provider;
+        match $command {
+            Commands::Create {
                 provider: provider_name,
                 image,
                 memory,
                 cpus,
-                timeout_secs: timeout,
+                timeout,
                 network,
                 writable,
-                env: env_map,
-                mounts: mount_configs,
-                kernel: None,
-                rootfs: None,
-            };
-            for _ in 0..count {
-                match provider.create(&config).await {
-                    Ok(id) => println!("{id}"),
-                    Err(e) => eprintln!("Error: {e}"),
+                env,
+                mounts,
+                count,
+                kernel,
+                rootfs,
+            } => {
+                let env_map = parse_env_vars(&env)
+                    .map_err(|e| {
+                        eprintln!("Error: {e}");
+                        std::process::exit(1);
+                    })
+                    .unwrap();
+                let mount_configs: Vec<_> = mounts
+                    .iter()
+                    .map(|s| {
+                        parse_mount(s).unwrap_or_else(|e| {
+                            eprintln!("Error: {e}");
+                            std::process::exit(1);
+                        })
+                    })
+                    .collect();
+                let config = roche_core::types::SandboxConfig {
+                    provider: provider_name,
+                    image,
+                    memory,
+                    cpus,
+                    timeout_secs: timeout,
+                    network,
+                    writable,
+                    env: env_map,
+                    mounts: mount_configs,
+                    kernel,
+                    rootfs,
+                };
+                for _ in 0..count {
+                    match provider.create(&config).await {
+                        Ok(id) => println!("{id}"),
+                        Err(e) => eprintln!("Error: {e}"),
+                    }
                 }
             }
-        }
-        Commands::Exec {
-            sandbox,
-            timeout,
-            command,
-        } => {
-            let request = ExecRequest {
+            Commands::Exec {
+                sandbox,
+                timeout,
                 command,
-                timeout_secs: timeout,
-            };
-            let output = provider.exec(&sandbox, &request).await?;
-            print!("{}", output.stdout);
-            eprint!("{}", output.stderr);
-            if output.exit_code != 0 {
-                std::process::exit(output.exit_code);
-            }
-        }
-        Commands::Destroy { ids, all } => {
-            let targets = if all {
-                provider.list().await?.into_iter().map(|sb| sb.id).collect()
-            } else {
-                ids
-            };
-            for id in &targets {
-                match provider.destroy(id).await {
-                    Ok(()) => {}
-                    Err(e) => eprintln!("Error destroying {id}: {e}"),
+            } => {
+                let request = roche_core::types::ExecRequest {
+                    command,
+                    timeout_secs: timeout,
+                };
+                let output = provider.exec(&sandbox, &request).await?;
+                print!("{}", output.stdout);
+                eprint!("{}", output.stderr);
+                if output.exit_code != 0 {
+                    std::process::exit(output.exit_code);
                 }
             }
-        }
-        Commands::Pause { id } => {
-            provider.pause(&id).await?;
-        }
-        Commands::Unpause { id } => {
-            provider.unpause(&id).await?;
-        }
-        Commands::List { json } => {
-            let sandboxes = provider.list().await?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&sandboxes).unwrap());
-            } else if sandboxes.is_empty() {
-                println!("No active sandboxes.");
-            } else {
-                println!(
-                    "{:<16} {:<10} {:<10} {:<10} IMAGE",
-                    "ID", "STATUS", "PROVIDER", "EXPIRES"
-                );
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                for sb in &sandboxes {
-                    let expires_str = match sb.expires_at {
-                        Some(exp) if exp > now => {
-                            let remaining = exp - now;
-                            let mins = remaining / 60;
-                            let secs = remaining % 60;
-                            format!("{mins}m{secs:02}s")
-                        }
-                        Some(_) => "expired".to_string(),
-                        None => "-".to_string(),
-                    };
+            Commands::Destroy { ids, all } => {
+                let targets = if all {
+                    provider.list().await?.into_iter().map(|sb| sb.id).collect()
+                } else {
+                    ids
+                };
+                for id in &targets {
+                    match provider.destroy(id).await {
+                        Ok(()) => {}
+                        Err(e) => eprintln!("Error destroying {id}: {e}"),
+                    }
+                }
+            }
+            Commands::Pause { id } => {
+                provider.pause(&id).await?;
+            }
+            Commands::Unpause { id } => {
+                provider.unpause(&id).await?;
+            }
+            Commands::List { json } => {
+                let sandboxes = provider.list().await?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&sandboxes).unwrap());
+                } else if sandboxes.is_empty() {
+                    println!("No active sandboxes.");
+                } else {
                     println!(
-                        "{:<16} {:<10} {:<10} {:<10} {}",
-                        sb.id,
-                        format!("{:?}", sb.status).to_lowercase(),
-                        sb.provider,
-                        expires_str,
-                        sb.image,
+                        "{:<16} {:<10} {:<10} {:<10} IMAGE",
+                        "ID", "STATUS", "PROVIDER", "EXPIRES"
                     );
-                }
-            }
-        }
-        Commands::Gc { dry_run, all } => {
-            if all {
-                let sandboxes = provider.list().await?;
-                for sb in &sandboxes {
-                    if dry_run {
-                        println!("{}", sb.id);
-                    } else {
-                        provider.destroy(&sb.id).await?;
-                        println!("destroyed: {}", sb.id);
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    for sb in &sandboxes {
+                        let expires_str = match sb.expires_at {
+                            Some(exp) if exp > now => {
+                                let remaining = exp - now;
+                                let mins = remaining / 60;
+                                let secs = remaining % 60;
+                                format!("{mins}m{secs:02}s")
+                            }
+                            Some(_) => "expired".to_string(),
+                            None => "-".to_string(),
+                        };
+                        println!(
+                            "{:<16} {:<10} {:<10} {:<10} {}",
+                            sb.id,
+                            format!("{:?}", sb.status).to_lowercase(),
+                            sb.provider,
+                            expires_str,
+                            sb.image,
+                        );
                     }
                 }
-            } else if dry_run {
-                let sandboxes = provider.list().await?;
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                for sb in &sandboxes {
-                    if let Some(exp) = sb.expires_at {
-                        if exp <= now {
+            }
+            Commands::Gc { dry_run, all } => {
+                if all {
+                    let sandboxes = provider.list().await?;
+                    for sb in &sandboxes {
+                        if dry_run {
                             println!("{}", sb.id);
+                        } else {
+                            provider.destroy(&sb.id).await?;
+                            println!("destroyed: {}", sb.id);
                         }
                     }
-                }
-            } else {
-                let destroyed = provider.gc().await?;
-                for id in &destroyed {
-                    println!("destroyed: {id}");
-                }
-                if destroyed.is_empty() {
-                    println!("No expired sandboxes found.");
+                } else if dry_run {
+                    let sandboxes = provider.list().await?;
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    for sb in &sandboxes {
+                        if let Some(exp) = sb.expires_at {
+                            if exp <= now {
+                                println!("{}", sb.id);
+                            }
+                        }
+                    }
+                } else {
+                    let destroyed = provider.gc().await?;
+                    for id in &destroyed {
+                        println!("destroyed: {id}");
+                    }
+                    if destroyed.is_empty() {
+                        println!("No expired sandboxes found.");
+                    }
                 }
             }
+            Commands::Cp { .. } => {
+                eprintln!("Error: file copy is only supported with the docker provider");
+                std::process::exit(1);
+            }
         }
-        Commands::Cp { src, dest } => {
-            use roche_core::provider::SandboxFileOps;
+        Ok(())
+    }};
+}
 
-            match (parse_cp_path(&src), parse_cp_path(&dest)) {
-                (Some((sandbox_id, sandbox_path)), None) => {
-                    let id = sandbox_id.to_string();
-                    provider
-                        .copy_from(&id, sandbox_path, std::path::Path::new(&dest))
-                        .await?;
+async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
+    use roche_core::provider::docker::DockerProvider;
+    use roche_core::provider::firecracker::FirecrackerProvider;
+    use roche_core::provider::{SandboxLifecycle, SandboxProvider};
+
+    // Determine provider from the Create command, default to docker for others
+    let provider_name = match &cli.command {
+        Commands::Create { provider, .. } => provider.clone(),
+        _ => "docker".to_string(),
+    };
+
+    match provider_name.as_str() {
+        "firecracker" => {
+            let provider = FirecrackerProvider::new()?;
+            run_provider_commands!(provider, cli.command)
+        }
+        _ => {
+            // Handle Cp specially since it requires SandboxFileOps (Docker-only)
+            if let Commands::Cp { ref src, ref dest } = cli.command {
+                use roche_core::provider::SandboxFileOps;
+                let provider = DockerProvider::new();
+                match (parse_cp_path(src), parse_cp_path(dest)) {
+                    (Some((sandbox_id, sandbox_path)), None) => {
+                        let id = sandbox_id.to_string();
+                        provider
+                            .copy_from(&id, sandbox_path, std::path::Path::new(dest))
+                            .await?;
+                    }
+                    (None, Some((sandbox_id, sandbox_path))) => {
+                        let id = sandbox_id.to_string();
+                        provider
+                            .copy_to(&id, std::path::Path::new(src), sandbox_path)
+                            .await?;
+                    }
+                    (Some(_), Some(_)) => {
+                        eprintln!(
+                            "Error: both source and destination cannot be sandbox paths"
+                        );
+                        std::process::exit(1);
+                    }
+                    (None, None) => {
+                        eprintln!("Error: one of source or destination must be a sandbox path (sandbox_id:/path)");
+                        std::process::exit(1);
+                    }
                 }
-                (None, Some((sandbox_id, sandbox_path))) => {
-                    let id = sandbox_id.to_string();
-                    provider
-                        .copy_to(&id, std::path::Path::new(&src), sandbox_path)
-                        .await?;
-                }
-                (Some(_), Some(_)) => {
-                    eprintln!("Error: both source and destination cannot be sandbox paths");
-                    std::process::exit(1);
-                }
-                (None, None) => {
-                    eprintln!("Error: one of source or destination must be a sandbox path (sandbox_id:/path)");
-                    std::process::exit(1);
-                }
+                Ok(())
+            } else {
+                let provider = DockerProvider::new();
+                run_provider_commands!(provider, cli.command)
             }
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
