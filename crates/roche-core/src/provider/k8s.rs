@@ -11,9 +11,10 @@ use k8s_openapi::api::networking::v1::{
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
-use kube::api::{DeleteParams, PostParams};
+use kube::api::{AttachParams, DeleteParams, PostParams};
 use kube::core::ObjectMeta;
 use std::collections::BTreeMap;
+use tokio::io::AsyncReadExt;
 
 const DEFAULT_NAMESPACE: &str = "roche-sandboxes";
 const EXIT_SENTINEL: &str = "ROCHE_EXIT:";
@@ -196,10 +197,76 @@ impl SandboxProvider for K8sProvider {
 
     async fn exec(
         &self,
-        _id: &SandboxId,
-        _request: &ExecRequest,
+        id: &SandboxId,
+        request: &ExecRequest,
     ) -> Result<ExecOutput, ProviderError> {
-        todo!("exec will be implemented in Task 6")
+        // Build command: sh -c '<escaped_cmd>; echo "ROCHE_EXIT:$?"'
+        let escaped_parts: Vec<String> = request.command.iter().map(|s| shell_escape(s)).collect();
+        let joined_cmd = escaped_parts.join(" ");
+        let wrapped_cmd = format!("{joined_cmd}; echo \"{EXIT_SENTINEL}$?\"");
+        let command = vec!["sh".to_string(), "-c".to_string(), wrapped_cmd];
+
+        let attach_params = AttachParams::default()
+            .container("sandbox")
+            .stdout(true)
+            .stderr(true);
+
+        let exec_future = async {
+            let mut attached = self
+                .pods_api()
+                .exec(id, command, &attach_params)
+                .await
+                .map_err(|e| match &e {
+                    kube::Error::Api(ae) if ae.code == 404 => {
+                        ProviderError::NotFound(id.clone())
+                    }
+                    _ => ProviderError::ExecFailed(format!("failed to exec in pod: {e}")),
+                })?;
+
+            let mut stdout_reader = attached
+                .stdout()
+                .ok_or_else(|| ProviderError::ExecFailed("no stdout stream".to_string()))?;
+            let mut stderr_reader = attached
+                .stderr()
+                .ok_or_else(|| ProviderError::ExecFailed("no stderr stream".to_string()))?;
+
+            // Read stdout and stderr concurrently to avoid deadlocks
+            let (stdout_result, stderr_result) = tokio::try_join!(
+                async {
+                    let mut buf = Vec::new();
+                    stdout_reader
+                        .read_to_end(&mut buf)
+                        .await
+                        .map_err(|e| ProviderError::ExecFailed(format!("stdout read error: {e}")))?;
+                    Ok::<_, ProviderError>(String::from_utf8_lossy(&buf).to_string())
+                },
+                async {
+                    let mut buf = Vec::new();
+                    stderr_reader
+                        .read_to_end(&mut buf)
+                        .await
+                        .map_err(|e| ProviderError::ExecFailed(format!("stderr read error: {e}")))?;
+                    Ok::<_, ProviderError>(String::from_utf8_lossy(&buf).to_string())
+                }
+            )?;
+
+            let (exit_code, clean_stdout) = parse_exit_sentinel(&stdout_result);
+
+            Ok(ExecOutput {
+                exit_code,
+                stdout: clean_stdout,
+                stderr: stderr_result,
+            })
+        };
+
+        // Apply timeout if requested
+        if let Some(timeout_secs) = request.timeout_secs {
+            tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), exec_future)
+                .await
+                .map_err(|_| ProviderError::Timeout(timeout_secs))?
+        } else {
+            exec_future.await
+        }
     }
 
     async fn destroy(&self, id: &SandboxId) -> Result<(), ProviderError> {
@@ -418,7 +485,6 @@ fn pod_phase_to_status(phase: Option<&str>) -> SandboxStatus {
 }
 
 /// Escape a string for safe use in a shell command.
-#[allow(dead_code)]
 fn shell_escape(s: &str) -> String {
     if s.chars()
         .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '/' || c == '.')
@@ -433,7 +499,6 @@ fn shell_escape(s: &str) -> String {
 ///
 /// The sentinel format is `ROCHE_EXIT:<code>\n` as the last line.
 /// Returns (exit_code, output_without_sentinel).
-#[allow(dead_code)]
 fn parse_exit_sentinel(stdout: &str) -> (i32, String) {
     if let Some(pos) = stdout.rfind(EXIT_SENTINEL) {
         let sentinel_line = &stdout[pos + EXIT_SENTINEL.len()..];
