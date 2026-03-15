@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initial warmup
     pool_manager.initial_warmup().await;
 
-    let service = server::SandboxServiceImpl::new(pool_manager.clone());
+    let service = server::SandboxServiceImpl::new(pool_manager.clone()).await;
     let svc = proto::sandbox_service_server::SandboxServiceServer::new(service);
 
     // Write daemon.json

@@ -2,6 +2,7 @@ use crate::pool::PoolManager;
 use crate::proto;
 use roche_core::provider::docker::DockerProvider;
 use roche_core::provider::e2b::E2bProvider;
+use roche_core::provider::k8s::K8sProvider;
 #[cfg(target_os = "linux")]
 use roche_core::provider::firecracker::FirecrackerProvider;
 use roche_core::provider::wasm::WasmProvider;
@@ -13,6 +14,7 @@ use tonic::{Request, Response, Status};
 pub struct SandboxServiceImpl {
     docker: DockerProvider,
     e2b: Option<E2bProvider>,
+    k8s: Option<K8sProvider>,
     #[cfg(target_os = "linux")]
     firecracker: Option<FirecrackerProvider>,
     wasm: Option<WasmProvider>,
@@ -20,10 +22,11 @@ pub struct SandboxServiceImpl {
 }
 
 impl SandboxServiceImpl {
-    pub fn new(pool_manager: Arc<PoolManager>) -> Self {
+    pub async fn new(pool_manager: Arc<PoolManager>) -> Self {
         Self {
             docker: DockerProvider::new(),
             e2b: E2bProvider::new().ok(),
+            k8s: K8sProvider::new().await.ok(),
             #[cfg(target_os = "linux")]
             firecracker: FirecrackerProvider::new().ok(),
             wasm: WasmProvider::new().ok(),
@@ -80,6 +83,15 @@ macro_rules! with_provider {
                 } else {
                     Err(Status::unavailable(
                         "E2B provider not available (set E2B_API_KEY or configure ~/.roche/e2b.toml)",
+                    ))
+                }
+            }
+            "k8s" => {
+                if let Some(ref $p) = $self.k8s {
+                    $body
+                } else {
+                    Err(Status::unavailable(
+                        "K8s provider not available (check kubeconfig or in-cluster configuration)",
                     ))
                 }
             }
