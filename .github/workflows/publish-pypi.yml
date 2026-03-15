@@ -22,7 +22,7 @@ jobs:
       - run: cd sdk/python && python -m build
       - run: cd sdk/python && pip install -e ".[dev]"
       - run: pytest sdk/python/tests/ -v
-      - run: cd sdk/python && twine upload dist/*
+      - run: cd sdk/python && twine upload --skip-existing dist/*
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
