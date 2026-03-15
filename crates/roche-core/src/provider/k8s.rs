@@ -3,7 +3,7 @@
 use crate::provider::ProviderError;
 use crate::types::SandboxStatus;
 use k8s_openapi::api::core::v1::{
-    Container, ContainerPort, EmptyDirVolumeSource, EnvVar, Namespace, Pod, PodSpec,
+    Container, EmptyDirVolumeSource, EnvVar, Namespace, Pod, PodSpec,
     ResourceRequirements, SecurityContext, Volume, VolumeMount,
 };
 use k8s_openapi::api::networking::v1::{
@@ -55,6 +55,7 @@ fn resolve_namespace() -> String {
 ///
 /// Runs each sandbox as an isolated Pod with network policies,
 /// security contexts, and resource limits.
+#[allow(dead_code)]
 pub struct K8sProvider {
     client: kube::Client,
     namespace: String,
@@ -250,6 +251,7 @@ fn build_pod(
 }
 
 /// Build a deny-all NetworkPolicy for a sandbox pod.
+#[allow(dead_code)]
 fn build_deny_all_network_policy(pod_name: &str, namespace: &str) -> NetworkPolicy {
     let policy_name = format!("roche-deny-{pod_name}");
     NetworkPolicy {
@@ -274,6 +276,7 @@ fn build_deny_all_network_policy(pod_name: &str, namespace: &str) -> NetworkPoli
 }
 
 /// Map a Kubernetes pod phase string to a Roche SandboxStatus.
+#[allow(dead_code)]
 fn pod_phase_to_status(phase: Option<&str>) -> SandboxStatus {
     match phase {
         Some("Running") => SandboxStatus::Running,
@@ -288,6 +291,7 @@ fn pod_phase_to_status(phase: Option<&str>) -> SandboxStatus {
 ///
 /// The sentinel format is `ROCHE_EXIT:<code>\n` as the last line.
 /// Returns (exit_code, output_without_sentinel).
+#[allow(dead_code)]
 fn parse_exit_sentinel(stdout: &str) -> (i32, String) {
     if let Some(pos) = stdout.rfind(EXIT_SENTINEL) {
         let sentinel_line = &stdout[pos + EXIT_SENTINEL.len()..];
