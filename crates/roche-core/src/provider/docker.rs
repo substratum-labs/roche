@@ -73,13 +73,15 @@ fn build_create_args(config: &SandboxConfig) -> Vec<String> {
     // Roche management labels
     args.extend(["--label".into(), "roche.managed=true".into()]);
 
-    // Expiry timestamp
-    let expires = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        + config.timeout_secs;
-    args.extend(["--label".into(), format!("roche.expires={expires}")]);
+    // Expiry timestamp (only if timeout > 0; pool sandboxes use timeout=0 for no expiry)
+    if config.timeout_secs > 0 {
+        let expires = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + config.timeout_secs;
+        args.extend(["--label".into(), format!("roche.expires={expires}")]);
+    }
 
     // Environment variables
     for (k, v) in &config.env {
@@ -511,6 +513,27 @@ mod tests {
             .unwrap()
             .as_secs();
         assert!(value >= now + 295 && value <= now + 305);
+    }
+
+    #[test]
+    fn test_build_create_args_no_expiry_when_timeout_zero() {
+        let config = SandboxConfig {
+            timeout_secs: 0,
+            ..Default::default()
+        };
+        let args = build_create_args(&config);
+        assert!(args.iter().any(|a| a == "roche.managed=true"));
+        assert!(!args.iter().any(|a| a.starts_with("roche.expires=")));
+    }
+
+    #[test]
+    fn test_build_create_args_has_expiry_when_timeout_nonzero() {
+        let config = SandboxConfig {
+            timeout_secs: 300,
+            ..Default::default()
+        };
+        let args = build_create_args(&config);
+        assert!(args.iter().any(|a| a.starts_with("roche.expires=")));
     }
 
     #[test]
