@@ -24,3 +24,27 @@ target
 __pycache__/
 *.pyc
 .venv/
+
+# Node.js / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated proto files
+sdk/typescript/src/generated/
+sdk/python/src/roche_sandbox/generated/
+
+# Build artifacts
+*.egg-info/
+build/
+dist/

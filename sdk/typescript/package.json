@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Universal sandbox orchestrator for AI agents — TypeScript SDK",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/substratum-labs/roche.git",
+    "directory": "sdk/typescript"
+  },
+  "homepage": "https://github.com/substratum-labs/roche/tree/main/sdk/typescript",
+  "keywords": ["sandbox", "docker", "ai", "agent", "wasm", "orchestrator"],
+  "author": "Substratum Labs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": ["dist"],
