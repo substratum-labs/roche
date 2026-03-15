@@ -1,6 +1,6 @@
 // Kubernetes sandbox provider for Roche.
 
-use crate::provider::{ProviderError, SandboxProvider};
+use crate::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
 use crate::types::{ExecOutput, ExecRequest, SandboxConfig, SandboxId, SandboxInfo, SandboxStatus};
 use k8s_openapi::api::core::v1::{
     Container, EmptyDirVolumeSource, EnvVar, Namespace, Pod, PodSpec,
@@ -14,7 +14,8 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::api::{AttachParams, DeleteParams, ListParams, PostParams};
 use kube::core::ObjectMeta;
 use std::collections::BTreeMap;
-use tokio::io::AsyncReadExt;
+use std::io::Read as _;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const DEFAULT_NAMESPACE: &str = "roche-sandboxes";
 const EXIT_SENTINEL: &str = "ROCHE_EXIT:";
@@ -349,6 +350,219 @@ impl SandboxProvider for K8sProvider {
         }
 
         Ok(infos)
+    }
+}
+
+impl SandboxLifecycle for K8sProvider {
+    async fn pause(&self, _id: &SandboxId) -> Result<(), ProviderError> {
+        Err(ProviderError::Unsupported(
+            "K8s does not support Pod pause".to_string(),
+        ))
+    }
+
+    async fn unpause(&self, _id: &SandboxId) -> Result<(), ProviderError> {
+        Err(ProviderError::Unsupported(
+            "K8s does not support Pod unpause".to_string(),
+        ))
+    }
+
+    async fn gc(&self) -> Result<Vec<SandboxId>, ProviderError> {
+        let lp = ListParams::default().labels("roche.managed=true");
+        let pods = self
+            .pods_api()
+            .list(&lp)
+            .await
+            .map_err(|e| ProviderError::ExecFailed(format!("Failed to list Pods: {e}")))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut destroyed = Vec::new();
+        for pod in pods.items {
+            let name = match pod.metadata.name {
+                Some(n) => n,
+                None => continue,
+            };
+            let annotations = pod.metadata.annotations.unwrap_or_default();
+            if let Some(expires_str) = annotations.get("roche.expires") {
+                if let Ok(expires_at) = expires_str.parse::<u64>() {
+                    if expires_at <= now {
+                        if self.destroy(&name).await.is_ok() {
+                            destroyed.push(name);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(destroyed)
+    }
+}
+
+impl SandboxFileOps for K8sProvider {
+    async fn copy_to(
+        &self,
+        id: &SandboxId,
+        src: &std::path::Path,
+        dest: &str,
+    ) -> Result<(), ProviderError> {
+        // Read the local file
+        let file_data = tokio::fs::read(src).await.map_err(|e| {
+            ProviderError::FileFailed(format!("failed to read local file {}: {e}", src.display()))
+        })?;
+
+        let file_name = src
+            .file_name()
+            .ok_or_else(|| ProviderError::FileFailed("source path has no filename".to_string()))?
+            .to_string_lossy();
+
+        // Create tar archive in memory
+        let mut tar_buf = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut tar_buf);
+            let mut header = tar::Header::new_gnu();
+            header.set_size(file_data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, file_name.as_ref(), &file_data[..])
+                .map_err(|e| ProviderError::FileFailed(format!("failed to create tar: {e}")))?;
+            builder
+                .finish()
+                .map_err(|e| ProviderError::FileFailed(format!("failed to finish tar: {e}")))?;
+        }
+
+        // Determine parent directory of destination
+        let dest_path = std::path::Path::new(dest);
+        let parent_dir = dest_path
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "/".to_string());
+
+        // Exec tar -xf - -C {parent_dir} in the pod
+        let command = vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            format!("tar -xf - -C {}", shell_escape(&parent_dir)),
+        ];
+
+        let attach_params = AttachParams::default()
+            .container("sandbox")
+            .stdin(true)
+            .stdout(true)
+            .stderr(true);
+
+        let mut attached = self
+            .pods_api()
+            .exec(id, command, &attach_params)
+            .await
+            .map_err(|e| match &e {
+                kube::Error::Api(ae) if ae.code == 404 => ProviderError::NotFound(id.clone()),
+                _ => ProviderError::FileFailed(format!("failed to exec tar in pod: {e}")),
+            })?;
+
+        // Write tar data to stdin
+        let mut stdin_writer = attached
+            .stdin()
+            .ok_or_else(|| ProviderError::FileFailed("no stdin stream".to_string()))?;
+        stdin_writer.write_all(&tar_buf).await.map_err(|e| {
+            ProviderError::FileFailed(format!("failed to write tar to stdin: {e}"))
+        })?;
+        stdin_writer.shutdown().await.map_err(|e| {
+            ProviderError::FileFailed(format!("failed to close stdin: {e}"))
+        })?;
+
+        // Read stderr to check for errors
+        if let Some(mut stderr_reader) = attached.stderr() {
+            let mut stderr_buf = Vec::new();
+            let _ = stderr_reader.read_to_end(&mut stderr_buf).await;
+            let stderr_str = String::from_utf8_lossy(&stderr_buf);
+            if !stderr_str.is_empty() {
+                return Err(ProviderError::FileFailed(format!(
+                    "tar extraction failed: {stderr_str}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn copy_from(
+        &self,
+        id: &SandboxId,
+        src: &str,
+        dest: &std::path::Path,
+    ) -> Result<(), ProviderError> {
+        let src_path = std::path::Path::new(src);
+        let parent_dir = src_path
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "/".to_string());
+        let filename = src_path
+            .file_name()
+            .ok_or_else(|| ProviderError::FileFailed("source path has no filename".to_string()))?
+            .to_string_lossy();
+
+        // Exec tar -cf - -C {parent} {filename} in the pod
+        let command = vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            format!(
+                "tar -cf - -C {} {}",
+                shell_escape(&parent_dir),
+                shell_escape(&filename)
+            ),
+        ];
+
+        let attach_params = AttachParams::default()
+            .container("sandbox")
+            .stdout(true)
+            .stderr(true);
+
+        let mut attached = self
+            .pods_api()
+            .exec(id, command, &attach_params)
+            .await
+            .map_err(|e| match &e {
+                kube::Error::Api(ae) if ae.code == 404 => ProviderError::NotFound(id.clone()),
+                _ => ProviderError::FileFailed(format!("failed to exec tar in pod: {e}")),
+            })?;
+
+        // Read stdout (tar data)
+        let mut stdout_reader = attached
+            .stdout()
+            .ok_or_else(|| ProviderError::FileFailed("no stdout stream".to_string()))?;
+        let mut tar_buf = Vec::new();
+        stdout_reader.read_to_end(&mut tar_buf).await.map_err(|e| {
+            ProviderError::FileFailed(format!("failed to read tar from stdout: {e}"))
+        })?;
+
+        // Extract tar to local path
+        let mut archive = tar::Archive::new(&tar_buf[..]);
+        let mut entries = archive.entries().map_err(|e| {
+            ProviderError::FileFailed(format!("failed to read tar entries: {e}"))
+        })?;
+
+        if let Some(entry_result) = entries.next() {
+            let mut entry = entry_result.map_err(|e| {
+                ProviderError::FileFailed(format!("failed to read tar entry: {e}"))
+            })?;
+            let mut data = Vec::new();
+            entry.read_to_end(&mut data).map_err(|e| {
+                ProviderError::FileFailed(format!("failed to read tar entry data: {e}"))
+            })?;
+            tokio::fs::write(dest, &data).await.map_err(|e| {
+                ProviderError::FileFailed(format!(
+                    "failed to write to {}: {e}",
+                    dest.display()
+                ))
+            })?;
+        } else {
+            return Err(ProviderError::FileFailed(
+                "tar archive is empty — file not found in sandbox".to_string(),
+            ));
+        }
+
+        Ok(())
     }
 }
 
