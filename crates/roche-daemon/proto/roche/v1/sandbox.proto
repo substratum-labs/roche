@@ -17,6 +17,9 @@ service SandboxService {
   rpc Gc(GcRequest) returns (GcResponse);
   rpc CopyTo(CopyToRequest) returns (CopyToResponse);
   rpc CopyFrom(CopyFromRequest) returns (CopyFromResponse);
+  rpc PoolStatus(PoolStatusRequest) returns (PoolStatusResponse);
+  rpc PoolWarmup(PoolWarmupRequest) returns (PoolWarmupResponse);
+  rpc PoolDrain(PoolDrainRequest) returns (PoolDrainResponse);
 }
 
 // CreateRequest configures a new sandbox.
@@ -146,4 +149,28 @@ message SandboxInfo {
   string provider = 3;
   string image = 4;
   optional uint64 expires_at = 5;
+}
+
+// Pool management RPCs
+
+message PoolStatusRequest {}
+message PoolStatusResponse {
+  repeated PoolInfo pools = 1;
+}
+
+message PoolInfo {
+  string provider = 1;
+  string image = 2;
+  uint32 idle_count = 3;
+  uint32 active_count = 4;
+  uint32 max_idle = 5;
+  uint32 max_total = 6;
+}
+
+message PoolWarmupRequest {}
+message PoolWarmupResponse {}
+
+message PoolDrainRequest {}
+message PoolDrainResponse {
+  uint32 destroyed_count = 1;
 }

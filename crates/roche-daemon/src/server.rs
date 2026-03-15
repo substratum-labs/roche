@@ -1,3 +1,4 @@
+use crate::pool::PoolManager;
 use crate::proto;
 use roche_core::provider::docker::DockerProvider;
 #[cfg(target_os = "linux")]
@@ -5,6 +6,7 @@ use roche_core::provider::firecracker::FirecrackerProvider;
 use roche_core::provider::wasm::WasmProvider;
 use roche_core::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
 use roche_core::types::{self, SandboxStatus};
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub struct SandboxServiceImpl {
@@ -12,15 +14,17 @@ pub struct SandboxServiceImpl {
     #[cfg(target_os = "linux")]
     firecracker: Option<FirecrackerProvider>,
     wasm: Option<WasmProvider>,
+    pool_manager: Arc<PoolManager>,
 }
 
 impl SandboxServiceImpl {
-    pub fn new() -> Self {
+    pub fn new(pool_manager: Arc<PoolManager>) -> Self {
         Self {
             docker: DockerProvider::new(),
             #[cfg(target_os = "linux")]
             firecracker: FirecrackerProvider::new().ok(),
             wasm: WasmProvider::new().ok(),
+            pool_manager,
         }
     }
 }
@@ -123,6 +127,12 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
             rootfs: req.rootfs,
         };
 
+        // Try pool first
+        if let Some(id) = self.pool_manager.try_acquire(&config).await {
+            return Ok(Response::new(proto::CreateResponse { sandbox_id: id }));
+        }
+
+        // Pool miss or bypass — direct create
         let provider_name = default_provider(&config.provider);
         with_provider!(self, provider_name, |p| {
             let id = p.create(&config).await.map_err(provider_error_to_status)?;
@@ -175,6 +185,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
             let mut destroyed = Vec::new();
             for id in &targets {
                 if p.destroy(id).await.is_ok() {
+                    self.pool_manager.on_destroy(id).await;
                     destroyed.push(id.clone());
                 }
             }
@@ -309,6 +320,43 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
             .await
             .map_err(provider_error_to_status)?;
         Ok(Response::new(proto::CopyFromResponse {}))
+    }
+
+    async fn pool_status(
+        &self,
+        _request: Request<proto::PoolStatusRequest>,
+    ) -> Result<Response<proto::PoolStatusResponse>, Status> {
+        let statuses = self.pool_manager.status().await;
+        let pools = statuses
+            .into_iter()
+            .map(|s| proto::PoolInfo {
+                provider: s.provider,
+                image: s.image,
+                idle_count: s.idle_count,
+                active_count: s.active_count,
+                max_idle: s.max_idle,
+                max_total: s.max_total,
+            })
+            .collect();
+        Ok(Response::new(proto::PoolStatusResponse { pools }))
+    }
+
+    async fn pool_warmup(
+        &self,
+        _request: Request<proto::PoolWarmupRequest>,
+    ) -> Result<Response<proto::PoolWarmupResponse>, Status> {
+        self.pool_manager.warmup().await;
+        Ok(Response::new(proto::PoolWarmupResponse {}))
+    }
+
+    async fn pool_drain(
+        &self,
+        _request: Request<proto::PoolDrainRequest>,
+    ) -> Result<Response<proto::PoolDrainResponse>, Status> {
+        let destroyed = self.pool_manager.drain().await;
+        Ok(Response::new(proto::PoolDrainResponse {
+            destroyed_count: destroyed,
+        }))
     }
 }
 

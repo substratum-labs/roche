@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::sync::Arc;
 use tonic::transport::Server;
 
 pub mod proto {
@@ -15,6 +16,10 @@ struct Args {
     /// Port to listen on
     #[arg(long, default_value = "50051")]
     port: u16,
+
+    /// Pool configuration (format: provider/image?min=N&max=N&total=N&idle_timeout=N)
+    #[arg(long = "pool")]
+    pools: Vec<String>,
 }
 
 #[tokio::main]
@@ -24,7 +29,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let addr = format!("127.0.0.1:{}", args.port).parse()?;
 
-    let service = server::SandboxServiceImpl::new();
+    // Load pool configs: CLI args override, then fall back to pool.toml
+    let pool_configs = if !args.pools.is_empty() {
+        let mut configs = Vec::new();
+        for arg in &args.pools {
+            match pool::config::parse_pool_arg(arg) {
+                Ok(cfg) => configs.push(cfg),
+                Err(e) => {
+                    tracing::error!("invalid --pool arg '{arg}': {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        configs
+    } else {
+        pool::config::load_pool_toml()
+    };
+
+    // Create pool manager
+    let pool_manager = Arc::new(pool::PoolManager::new(pool_configs));
+
+    // Spawn pool background tasks
+    let replenish_handle = tokio::spawn(pool::replenish::run_replenish_loop(
+        pool_manager.inner.clone(),
+        pool_manager.replenish_notify.clone(),
+    ));
+    let reaper_handle = tokio::spawn(pool::reaper::run_reaper_loop(
+        pool_manager.inner.clone(),
+    ));
+
+    // Initial warmup
+    pool_manager.initial_warmup().await;
+
+    let service = server::SandboxServiceImpl::new(pool_manager.clone());
     let svc = proto::sandbox_service_server::SandboxServiceServer::new(service);
 
     // Write daemon.json
@@ -54,7 +91,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .serve_with_shutdown(addr, shutdown)
         .await?;
 
+    // Shutdown pool — drain idle sandboxes
+    pool_manager.shutdown().await;
+
     gc_handle.abort();
+    replenish_handle.abort();
+    reaper_handle.abort();
 
     // Clean up daemon.json
     let _ = std::fs::remove_file(&daemon_json);
