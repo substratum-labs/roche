@@ -53,3 +53,15 @@ jobs:
       - run: cd sdk/typescript && npm ci
       - run: cd sdk/typescript && bash scripts/proto-gen.sh
       - run: cd sdk/typescript && npm test
+
+  go:
+    name: Go SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - run: cd sdk/go && go build ./...
+      - run: cd sdk/go && go vet ./...
+      - run: cd sdk/go && go test ./... -v
