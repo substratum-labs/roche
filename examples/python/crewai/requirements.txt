@@ -1,0 +1,3 @@
+crewai>=0.80
+crewai-tools>=0.14
+roche-sandbox

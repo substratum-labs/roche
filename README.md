@@ -30,8 +30,8 @@ AutoGen  ───┘              └── WASM
 ## Features
 
 - **AI-safe defaults** — network off, readonly filesystem, 300s timeout
-- **Multi-provider** — Docker (MVP), Firecracker, WASM (planned)
-- **CLI + SDK** — `roche` binary + Python SDK
+- **Multi-provider** — Docker, Firecracker, WASM
+- **CLI + SDK** — `roche` binary + Python & TypeScript SDKs
 - **Resource limits** — memory, CPU, PID limits, timeout enforcement
 - **Zero config** — sensible defaults, opt-in for permissions
 
@@ -110,45 +110,58 @@ List all active Roche-managed sandboxes.
 
 ## Python SDK
 
-### Install
-
 ```bash
-pip install -e sdk/python
+pip install roche-sandbox
 ```
 
-### Usage
-
 ```python
-from roche import Roche, Sandbox, SandboxConfig
+from roche_sandbox import Roche
 
-# Direct client usage
-client = Roche()
-sandbox_id = client.create(SandboxConfig(memory="512m"))
-output = client.exec(sandbox_id, ["python3", "-c", "print(2 + 2)"])
-print(output.stdout)  # "4\n"
-client.destroy(sandbox_id)
+roche = Roche()
+sandbox = roche.create(image="python:3.12-slim")
+output = sandbox.exec(["python3", "-c", "print('Hello from Roche!')"])
+print(output.stdout)  # Hello from Roche!
+sandbox.destroy()
 
 # Context manager (auto-cleanup)
-with Sandbox(config=SandboxConfig(memory="512m")) as sb:
-    result = sb.exec(["python3", "-c", "print('Hello!')"])
-    print(result.stdout)
-# sandbox is automatically destroyed
+with roche.create(image="python:3.12-slim") as sandbox:
+    result = sandbox.exec(["echo", "hello"])
 ```
 
-### Configuration
+See [Python SDK README](sdk/python/README.md) for full documentation.
 
-```python
-config = SandboxConfig(
-    provider="docker",          # sandbox provider
-    image="python:3.12-slim",   # container image
-    memory="1g",                # memory limit
-    cpus=2.0,                   # CPU limit
-    timeout=600,                # timeout in seconds
-    network=True,               # enable network (default: False)
-    writable=True,              # enable writable FS (default: False)
-    env={"API_KEY": "secret"},  # environment variables
-)
+### Agent Framework Integrations
+
+Roche integrates with all major AI agent frameworks. Examples run in simulated mode by default — set the appropriate API key env var to enable real LLM calls.
+
+| Framework | Example | Env Var |
+|-----------|---------|---------|
+| [OpenAI Agents SDK](examples/python/openai-agents/) | Tool + code interpreter | `OPENAI_API_KEY` |
+| [LangChain / LangGraph](examples/python/langchain/) | Tool + stateful retry workflow | `OPENAI_API_KEY` |
+| [CrewAI](examples/python/crewai/) | Task + multi-agent crew | `OPENAI_API_KEY` |
+| [Anthropic API](examples/python/anthropic/) | tool_use + agentic loop | `ANTHROPIC_API_KEY` |
+| [AutoGen](examples/python/autogen/) | Code executor + group chat | `OPENAI_API_KEY` |
+| [Camel-AI](examples/python/camel/) | Toolkit + role-playing | `OPENAI_API_KEY` |
+
+See [examples/README.md](examples/README.md) for setup instructions.
+
+## TypeScript SDK
+
+```bash
+npm install roche-sandbox
 ```
+
+```typescript
+import { Roche } from "roche-sandbox";
+
+const roche = new Roche();
+const sandbox = await roche.createSandbox({ image: "python:3.12-slim" });
+const output = await sandbox.exec(["python3", "-c", "print('Hello!')"]);
+console.log(output.stdout); // Hello!
+await sandbox.destroy();
+```
+
+See [TypeScript SDK README](sdk/typescript/README.md) for full documentation.
 
 ## Security Defaults
 

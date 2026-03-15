@@ -1,0 +1,28 @@
+name: Publish PyPI
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "28.x"
+      - run: pip install build twine
+      - run: cd sdk/python && bash scripts/proto-gen.sh
+      - run: cd sdk/python && python -m build
+      - run: cd sdk/python && pip install -e ".[dev]"
+      - run: pytest sdk/python/tests/ -v
+      - run: cd sdk/python && twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}

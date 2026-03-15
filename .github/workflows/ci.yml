@@ -32,5 +32,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "28.x"
+      - run: cd sdk/python && bash scripts/proto-gen.sh
       - run: pip install -e "sdk/python[dev]"
       - run: pytest sdk/python/tests/ -v
+
+  typescript:
+    name: TypeScript SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "28.x"
+      - run: cd sdk/typescript && npm ci
+      - run: cd sdk/typescript && bash scripts/proto-gen.sh
+      - run: cd sdk/typescript && npm test

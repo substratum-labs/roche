@@ -39,6 +39,14 @@ pub struct SandboxConfig {
     /// Volume mounts.
     #[serde(default)]
     pub mounts: Vec<MountConfig>,
+
+    /// Path to uncompressed Linux kernel (Firecracker only).
+    #[serde(default)]
+    pub kernel: Option<String>,
+
+    /// Path to ext4 rootfs image (Firecracker only).
+    #[serde(default)]
+    pub rootfs: Option<String>,
 }
 
 /// Configuration for a volume mount.
@@ -70,6 +78,8 @@ impl Default for SandboxConfig {
             writable: false,
             env: HashMap::new(),
             mounts: Vec::new(),
+            kernel: None,
+            rootfs: None,
         }
     }
 }
@@ -107,4 +117,41 @@ pub struct ExecOutput {
     pub exit_code: i32,
     pub stdout: String,
     pub stderr: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sandbox_config_default_has_no_kernel_rootfs() {
+        let config = SandboxConfig::default();
+        assert!(config.kernel.is_none());
+        assert!(config.rootfs.is_none());
+    }
+
+    #[test]
+    fn test_sandbox_config_with_kernel_rootfs() {
+        let config = SandboxConfig {
+            kernel: Some("/path/to/vmlinux".to_string()),
+            rootfs: Some("/path/to/rootfs.ext4".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config.kernel.as_deref(), Some("/path/to/vmlinux"));
+        assert_eq!(config.rootfs.as_deref(), Some("/path/to/rootfs.ext4"));
+    }
+
+    #[test]
+    fn test_sandbox_config_serde_roundtrip_with_kernel() {
+        let config = SandboxConfig {
+            provider: "firecracker".to_string(),
+            kernel: Some("/boot/vmlinux".to_string()),
+            rootfs: Some("/images/rootfs.ext4".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: SandboxConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.kernel.as_deref(), Some("/boot/vmlinux"));
+        assert_eq!(parsed.rootfs.as_deref(), Some("/images/rootfs.ext4"));
+    }
 }

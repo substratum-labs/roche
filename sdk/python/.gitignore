@@ -1,0 +1,6 @@
+src/roche_sandbox/generated/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+.venv/
