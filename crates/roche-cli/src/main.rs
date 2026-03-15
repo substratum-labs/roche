@@ -268,7 +268,7 @@ async fn handle_daemon(action: DaemonAction) -> Result<(), roche_core::provider:
             }
 
             if foreground {
-                let status = tokio::process::Command::new("roche-daemon")
+                let status = tokio::process::Command::new("roched")
                     .arg("--port")
                     .arg(port.to_string())
                     .status()
@@ -289,7 +289,7 @@ async fn handle_daemon(action: DaemonAction) -> Result<(), roche_core::provider:
                     .try_clone()
                     .map_err(|e| ProviderError::ExecFailed(e.to_string()))?;
 
-                let child = std::process::Command::new("roche-daemon")
+                let child = std::process::Command::new("roched")
                     .arg("--port")
                     .arg(port.to_string())
                     .stdout(log_file)

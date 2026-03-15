@@ -46,9 +46,9 @@ jobs:
         run: |
           cd target/${{ matrix.target }}/release
           if [ -f roche ]; then
-            tar czf ../../../roche-${{ matrix.target }}.tar.gz roche roche-daemon
+            tar czf ../../../roche-${{ matrix.target }}.tar.gz roche roched
           elif [ -f roche.exe ]; then
-            tar czf ../../../roche-${{ matrix.target }}.tar.gz roche.exe roche-daemon.exe
+            tar czf ../../../roche-${{ matrix.target }}.tar.gz roche.exe roched.exe
           fi
 
       - uses: actions/upload-artifact@v4

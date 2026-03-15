@@ -11,7 +11,7 @@ mod pool;
 mod server;
 
 #[derive(Parser)]
-#[command(name = "roche-daemon", about = "Roche sandbox orchestrator daemon")]
+#[command(name = "roched", about = "Roche sandbox orchestrator daemon")]
 struct Args {
     /// Port to listen on
     #[arg(long, default_value = "50051")]

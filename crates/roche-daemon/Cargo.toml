@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [[bin]]
-name = "roche-daemon"
+name = "roched"
 path = "src/main.rs"
 
 [dependencies]
