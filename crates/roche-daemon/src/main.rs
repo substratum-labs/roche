@@ -6,6 +6,7 @@ pub mod proto {
 }
 
 mod gc;
+mod pool;
 mod server;
 
 #[derive(Parser)]
