@@ -1,6 +1,7 @@
 use crate::pool::PoolManager;
 use crate::proto;
 use roche_core::provider::docker::DockerProvider;
+use roche_core::provider::e2b::E2bProvider;
 #[cfg(target_os = "linux")]
 use roche_core::provider::firecracker::FirecrackerProvider;
 use roche_core::provider::wasm::WasmProvider;
@@ -11,6 +12,7 @@ use tonic::{Request, Response, Status};
 
 pub struct SandboxServiceImpl {
     docker: DockerProvider,
+    e2b: Option<E2bProvider>,
     #[cfg(target_os = "linux")]
     firecracker: Option<FirecrackerProvider>,
     wasm: Option<WasmProvider>,
@@ -21,6 +23,7 @@ impl SandboxServiceImpl {
     pub fn new(pool_manager: Arc<PoolManager>) -> Self {
         Self {
             docker: DockerProvider::new(),
+            e2b: E2bProvider::new().ok(),
             #[cfg(target_os = "linux")]
             firecracker: FirecrackerProvider::new().ok(),
             wasm: WasmProvider::new().ok(),
@@ -71,6 +74,15 @@ fn default_provider(p: &str) -> &str {
 macro_rules! with_provider {
     ($self:expr, $provider_name:expr, |$p:ident| $body:expr) => {{
         match $provider_name {
+            "e2b" => {
+                if let Some(ref $p) = $self.e2b {
+                    $body
+                } else {
+                    Err(Status::unavailable(
+                        "E2B provider not available (set E2B_API_KEY or configure ~/.roche/e2b.toml)",
+                    ))
+                }
+            }
             #[cfg(target_os = "linux")]
             "firecracker" => {
                 if let Some(ref $p) = $self.firecracker {
