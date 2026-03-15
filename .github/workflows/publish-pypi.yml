@@ -17,7 +17,7 @@ jobs:
       - uses: arduino/setup-protoc@v3
         with:
           version: "28.x"
-      - run: pip install build twine
+      - run: pip install build twine grpcio-tools
       - run: cd sdk/python && bash scripts/proto-gen.sh
       - run: cd sdk/python && python -m build
       - run: cd sdk/python && pip install -e ".[dev]"
