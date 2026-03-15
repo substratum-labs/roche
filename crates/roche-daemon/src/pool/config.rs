@@ -84,8 +84,9 @@ pub fn parse_pool_arg(arg: &str) -> Result<PoolConfig, String> {
                     config.max_total = v.parse().map_err(|_| format!("invalid total: {v}"))?
                 }
                 "idle_timeout" => {
-                    config.idle_timeout_secs =
-                        v.parse().map_err(|_| format!("invalid idle_timeout: {v}"))?
+                    config.idle_timeout_secs = v
+                        .parse()
+                        .map_err(|_| format!("invalid idle_timeout: {v}"))?
                 }
                 other => return Err(format!("unknown pool param: '{other}'")),
             }
@@ -101,9 +102,8 @@ mod tests {
 
     #[test]
     fn test_parse_pool_arg_full() {
-        let cfg =
-            parse_pool_arg("docker/python:3.12-slim?min=3&max=10&total=20&idle_timeout=300")
-                .unwrap();
+        let cfg = parse_pool_arg("docker/python:3.12-slim?min=3&max=10&total=20&idle_timeout=300")
+            .unwrap();
         assert_eq!(cfg.provider, "docker");
         assert_eq!(cfg.image, "python:3.12-slim");
         assert_eq!(cfg.min_idle, 3);

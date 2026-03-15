@@ -69,10 +69,7 @@ impl PoolManager {
             }
 
             if cfg.provider != "docker" && cfg.provider != "firecracker" {
-                tracing::error!(
-                    "unknown provider '{}', skipping pool config",
-                    cfg.provider
-                );
+                tracing::error!("unknown provider '{}', skipping pool config", cfg.provider);
                 continue;
             }
 

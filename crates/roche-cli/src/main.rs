@@ -138,6 +138,12 @@ enum Commands {
         #[command(subcommand)]
         action: DaemonAction,
     },
+
+    /// Manage sandbox pool (requires daemon)
+    Pool {
+        #[command(subcommand)]
+        action: PoolAction,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -156,6 +162,16 @@ enum DaemonAction {
     Stop,
     /// Show daemon status
     Status,
+}
+
+#[derive(Subcommand, Clone)]
+enum PoolAction {
+    /// Show pool status (idle/active counts)
+    Status,
+    /// Trigger immediate warmup for all pools
+    Warmup,
+    /// Destroy all idle sandboxes in pools
+    Drain,
 }
 
 #[tokio::main]
@@ -560,6 +576,51 @@ async fn run_via_grpc(
                 }
             }
         }
+        Commands::Pool { action } => match action {
+            PoolAction::Status => {
+                let resp = client
+                    .pool_status(proto::PoolStatusRequest {})
+                    .await
+                    .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+                let pools = resp.into_inner().pools;
+                if pools.is_empty() {
+                    println!("No pools configured.");
+                } else {
+                    println!(
+                        "{:<14} {:<30} {:<6} {:<8} {:<10} {:<10}",
+                        "PROVIDER", "IMAGE", "IDLE", "ACTIVE", "MAX_IDLE", "MAX_TOTAL"
+                    );
+                    for p in &pools {
+                        println!(
+                            "{:<14} {:<30} {:<6} {:<8} {:<10} {:<10}",
+                            p.provider,
+                            p.image,
+                            p.idle_count,
+                            p.active_count,
+                            p.max_idle,
+                            p.max_total
+                        );
+                    }
+                }
+            }
+            PoolAction::Warmup => {
+                client
+                    .pool_warmup(proto::PoolWarmupRequest {})
+                    .await
+                    .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+                println!("Pool warmup triggered.");
+            }
+            PoolAction::Drain => {
+                let resp = client
+                    .pool_drain(proto::PoolDrainRequest {})
+                    .await
+                    .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
+                println!(
+                    "Drained {} idle sandboxes.",
+                    resp.into_inner().destroyed_count
+                );
+            }
+        },
         Commands::Daemon { .. } => unreachable!("daemon handled earlier"),
     }
     Ok(())
@@ -729,6 +790,7 @@ macro_rules! run_provider_commands {
                 eprintln!("Error: file copy is only supported with the docker provider");
                 std::process::exit(1);
             }
+            Commands::Pool { .. } => unreachable!("pool handled earlier"),
             Commands::Daemon { .. } => unreachable!("daemon handled earlier"),
         }
         Ok(())
@@ -743,6 +805,15 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
     // Handle daemon subcommand first
     if let Commands::Daemon { ref action } = cli.command {
         return handle_daemon(action.clone()).await;
+    }
+
+    // Handle pool subcommand (daemon-only)
+    if let Commands::Pool { .. } = cli.command {
+        if let Some(result) = try_daemon_dispatch(&cli).await {
+            return result;
+        }
+        eprintln!("Error: pool commands require a running daemon");
+        std::process::exit(1);
     }
 
     // Try daemon gRPC dispatch

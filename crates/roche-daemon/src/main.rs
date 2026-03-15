@@ -54,9 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pool_manager.inner.clone(),
         pool_manager.replenish_notify.clone(),
     ));
-    let reaper_handle = tokio::spawn(pool::reaper::run_reaper_loop(
-        pool_manager.inner.clone(),
-    ));
+    let reaper_handle = tokio::spawn(pool::reaper::run_reaper_loop(pool_manager.inner.clone()));
 
     // Initial warmup
     pool_manager.initial_warmup().await;
