@@ -11,7 +11,7 @@ use k8s_openapi::api::networking::v1::{
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
-use kube::api::{AttachParams, DeleteParams, PostParams};
+use kube::api::{AttachParams, DeleteParams, ListParams, PostParams};
 use kube::core::ObjectMeta;
 use std::collections::BTreeMap;
 use tokio::io::AsyncReadExt;
@@ -309,7 +309,46 @@ impl SandboxProvider for K8sProvider {
     }
 
     async fn list(&self) -> Result<Vec<SandboxInfo>, ProviderError> {
-        todo!("list will be implemented in Task 7")
+        let lp = ListParams::default().labels("roche.managed=true");
+        let pods = self
+            .pods_api()
+            .list(&lp)
+            .await
+            .map_err(|e| ProviderError::ExecFailed(format!("failed to list pods: {e}")))?;
+
+        let mut infos = Vec::new();
+        for pod in pods.items {
+            let name = pod.metadata.name.unwrap_or_default();
+            let labels = pod.metadata.labels.unwrap_or_default();
+            let annotations = pod.metadata.annotations.unwrap_or_default();
+
+            let image = labels
+                .get("roche.image")
+                .cloned()
+                .unwrap_or_default();
+
+            let expires_at = annotations
+                .get("roche.expires")
+                .and_then(|v| v.parse::<u64>().ok());
+
+            let phase = pod
+                .status
+                .as_ref()
+                .and_then(|s| s.phase.as_deref())
+                .map(String::from);
+
+            let status = pod_phase_to_status(phase.as_deref());
+
+            infos.push(SandboxInfo {
+                id: name,
+                status,
+                provider: "k8s".to_string(),
+                image,
+                expires_at,
+            });
+        }
+
+        Ok(infos)
     }
 }
 
@@ -473,7 +512,6 @@ fn build_deny_all_network_policy(pod_name: &str, namespace: &str) -> NetworkPoli
 }
 
 /// Map a Kubernetes pod phase string to a Roche SandboxStatus.
-#[allow(dead_code)]
 fn pod_phase_to_status(phase: Option<&str>) -> SandboxStatus {
     match phase {
         Some("Running") => SandboxStatus::Running,
