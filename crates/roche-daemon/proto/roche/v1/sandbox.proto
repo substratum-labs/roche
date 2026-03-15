@@ -1,0 +1,149 @@
+syntax = "proto3";
+package roche.v1;
+
+// SandboxService provides a gRPC API for managing isolated code execution
+// environments (sandboxes). Supports multiple providers (Docker, Firecracker,
+// WASM) with AI-optimized security defaults.
+//
+// Transport: Clients connect via gRPC to the roche-daemon. If the daemon is
+// not running, SDKs fall back to invoking the roche CLI as a subprocess.
+service SandboxService {
+  rpc Create(CreateRequest) returns (CreateResponse);
+  rpc Exec(ExecRequest) returns (ExecResponse);
+  rpc Destroy(DestroyRequest) returns (DestroyResponse);
+  rpc List(ListRequest) returns (ListResponse);
+  rpc Pause(PauseRequest) returns (PauseResponse);
+  rpc Unpause(UnpauseRequest) returns (UnpauseResponse);
+  rpc Gc(GcRequest) returns (GcResponse);
+  rpc CopyTo(CopyToRequest) returns (CopyToResponse);
+  rpc CopyFrom(CopyFromRequest) returns (CopyFromResponse);
+}
+
+// CreateRequest configures a new sandbox.
+// Proto3 bool defaults (false) align with AI-safe defaults:
+// network=off, writable=off. timeout_secs=0 means "use server default (300s)".
+message CreateRequest {
+  string provider = 1;           // Provider backend: "docker", "firecracker", or "wasm"
+  string image = 2;              // Container image (Docker) or .wasm module path (WASM)
+  optional string memory = 3;    // Memory limit, e.g. "512m", "1g"
+  optional double cpus = 4;      // CPU limit, e.g. 1.0 = one core
+  uint64 timeout_secs = 5;       // Sandbox TTL in seconds (0 = server default 300s)
+  bool network = 6;              // Enable network access (default: false, AI-safe)
+  bool writable = 7;             // Enable writable filesystem (default: false, AI-safe)
+  map<string, string> env = 8;   // Environment variables
+  repeated MountConfig mounts = 9; // Host directory mounts
+  optional string kernel = 10;   // Firecracker only: path to Linux kernel
+  optional string rootfs = 11;   // Firecracker only: path to ext4 rootfs
+}
+
+message CreateResponse {
+  string sandbox_id = 1;
+}
+
+// Execute a command inside an existing sandbox.
+message ExecRequest {
+  string sandbox_id = 1;
+  repeated string command = 2;
+  optional uint64 timeout_secs = 3;
+  string provider = 4;
+}
+
+// Output from a sandboxed command execution.
+message ExecResponse {
+  int32 exit_code = 1;
+  string stdout = 2;
+  string stderr = 3;
+}
+
+// Destroy one or more sandboxes.
+message DestroyRequest {
+  repeated string sandbox_ids = 1;
+  bool all = 2;
+  string provider = 3;
+}
+
+message DestroyResponse {
+  repeated string destroyed_ids = 1;
+}
+
+// List active sandboxes, optionally filtered by provider.
+message ListRequest {
+  string provider = 1;
+}
+
+// Response containing the list of active sandboxes.
+message ListResponse {
+  repeated SandboxInfo sandboxes = 1;
+}
+
+// Pause a running sandbox, preserving its state.
+message PauseRequest {
+  string sandbox_id = 1;
+  string provider = 2;
+}
+
+message PauseResponse {}
+
+// Resume a previously paused sandbox.
+message UnpauseRequest {
+  string sandbox_id = 1;
+  string provider = 2;
+}
+
+message UnpauseResponse {}
+
+// Garbage collect expired sandboxes.
+message GcRequest {
+  bool dry_run = 1;
+  bool all = 2;
+  string provider = 3;
+}
+
+message GcResponse {
+  repeated string destroyed_ids = 1;
+}
+
+// Copy files from the host into a sandbox (Docker only).
+message CopyToRequest {
+  string sandbox_id = 1;
+  string host_path = 2;
+  string sandbox_path = 3;
+  string provider = 4;
+}
+
+message CopyToResponse {}
+
+// Copy files from a sandbox to the host (Docker only).
+message CopyFromRequest {
+  string sandbox_id = 1;
+  string sandbox_path = 2;
+  string host_path = 3;
+  string provider = 4;
+}
+
+message CopyFromResponse {}
+
+// Host directory mount configuration.
+message MountConfig {
+  string host_path = 1;
+  string container_path = 2;
+  bool readonly = 3;
+}
+
+// Runtime status of a sandbox.
+enum SandboxStatus {
+  SANDBOX_STATUS_UNSPECIFIED = 0;
+  SANDBOX_STATUS_RUNNING = 1;
+  SANDBOX_STATUS_PAUSED = 2;
+  SANDBOX_STATUS_STOPPED = 3;
+  SANDBOX_STATUS_FAILED = 4;
+}
+
+// Metadata about an active sandbox.
+message SandboxInfo {
+  string id = 1;
+  SandboxStatus status = 2;
+  string provider = 3;
+  string image = 4;
+  optional uint64 expires_at = 5;
+}
