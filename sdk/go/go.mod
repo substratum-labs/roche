@@ -1,4 +1,4 @@
-module github.com/substratum-labs/roche-go
+module github.com/substratum-labs/roche/sdk/go
 
 go 1.24.0
 

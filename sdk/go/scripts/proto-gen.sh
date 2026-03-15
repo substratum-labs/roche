@@ -13,8 +13,8 @@ protoc \
   -I "$PROTO_DIR" \
   --go_out="$OUT_DIR" \
   --go_opt=paths=source_relative \
-  --go_opt=Mroche/v1/sandbox.proto=github.com/substratum-labs/roche-go/gen/roche/v1 \
+  --go_opt=Mroche/v1/sandbox.proto=github.com/substratum-labs/roche/sdk/go/gen/roche/v1 \
   --go-grpc_out="$OUT_DIR" \
   --go-grpc_opt=paths=source_relative \
-  --go-grpc_opt=Mroche/v1/sandbox.proto=github.com/substratum-labs/roche-go/gen/roche/v1 \
+  --go-grpc_opt=Mroche/v1/sandbox.proto=github.com/substratum-labs/roche/sdk/go/gen/roche/v1 \
   "$PROTO_DIR/roche/v1/sandbox.proto"

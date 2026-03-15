@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	pb "github.com/substratum-labs/roche-go/gen/roche/v1"
+	pb "github.com/substratum-labs/roche/sdk/go/gen/roche/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

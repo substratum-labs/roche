@@ -13,8 +13,8 @@ Add a Go SDK for Roche that mirrors the Python and TypeScript SDK API surface. T
 | Error handling | Sentinel errors + `errors.Is()` | Idiomatic Go; no exception hierarchy needed |
 | Configuration | Functional options pattern | `New(WithProvider("k8s"), WithBinary("/usr/local/bin/roche"))` |
 | Defaults | Zero-value aware with explicit defaults | `SandboxConfig{}` gets safe defaults applied at transport layer |
-| Module path | `github.com/substratum-labs/roche-go` | Standard Go module naming |
-| Package name | `roche` | `import roche "github.com/substratum-labs/roche-go"` |
+| Module path | `github.com/substratum-labs/roche/sdk/go` | Standard Go module naming |
+| Package name | `roche` | `import roche "github.com/substratum-labs/roche/sdk/go"` |
 | Proto codegen | `protoc-gen-go` + `protoc-gen-go-grpc` | Standard Go gRPC toolchain |
 | Cleanup pattern | `sandbox.Close(ctx)` + `defer` | Idiomatic Go resource management |
 
@@ -458,7 +458,7 @@ Logic:
 ## Dependencies
 
 ```
-module github.com/substratum-labs/roche-go
+module github.com/substratum-labs/roche/sdk/go
 
 go 1.21
 
@@ -511,7 +511,7 @@ protoc \
 | Cleanup | `async with` / `with` | `await using` (Symbol.asyncDispose) | `defer sandbox.Close(ctx)` |
 | Transport | Protocol (duck typing) | interface | interface |
 | Options | `__init__(**kwargs)` | constructor options object | Functional options pattern |
-| Package | `roche-sandbox` (PyPI) | `roche-sandbox` (npm) | `github.com/substratum-labs/roche-go` |
+| Package | `roche-sandbox` (PyPI) | `roche-sandbox` (npm) | `github.com/substratum-labs/roche/sdk/go` |
 
 ## Testing
 
