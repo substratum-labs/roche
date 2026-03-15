@@ -1,7 +1,7 @@
 // Kubernetes sandbox provider for Roche.
 
-use crate::provider::ProviderError;
-use crate::types::SandboxStatus;
+use crate::provider::{ProviderError, SandboxProvider};
+use crate::types::{ExecOutput, ExecRequest, SandboxConfig, SandboxId, SandboxInfo, SandboxStatus};
 use k8s_openapi::api::core::v1::{
     Container, EmptyDirVolumeSource, EnvVar, Namespace, Pod, PodSpec,
     ResourceRequirements, SecurityContext, Volume, VolumeMount,
@@ -11,6 +11,7 @@ use k8s_openapi::api::networking::v1::{
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
+use kube::api::{DeleteParams, PostParams};
 use kube::core::ObjectMeta;
 use std::collections::BTreeMap;
 
@@ -55,7 +56,6 @@ fn resolve_namespace() -> String {
 ///
 /// Runs each sandbox as an isolated Pod with network policies,
 /// security contexts, and resource limits.
-#[allow(dead_code)]
 pub struct K8sProvider {
     client: kube::Client,
     namespace: String,
@@ -112,10 +112,141 @@ impl K8sProvider {
 
         Ok(Self { client, namespace })
     }
+
+    fn pods_api(&self) -> kube::Api<Pod> {
+        kube::Api::namespaced(self.client.clone(), &self.namespace)
+    }
+
+    fn netpol_api(&self) -> kube::Api<NetworkPolicy> {
+        kube::Api::namespaced(self.client.clone(), &self.namespace)
+    }
+}
+
+impl SandboxProvider for K8sProvider {
+    async fn create(&self, config: &SandboxConfig) -> Result<SandboxId, ProviderError> {
+        // Reject volume mounts — not supported for k8s provider
+        if !config.mounts.is_empty() {
+            return Err(ProviderError::Unsupported(
+                "volume mounts are not supported by the k8s provider".to_string(),
+            ));
+        }
+
+        let pod_name = format!("roche-{}", uuid::Uuid::new_v4());
+        let pod = build_pod(&pod_name, &self.namespace, config);
+
+        // Create the pod
+        self.pods_api()
+            .create(&PostParams::default(), &pod)
+            .await
+            .map_err(|e| ProviderError::CreateFailed(format!("failed to create pod: {e}")))?;
+
+        // Create NetworkPolicy if network is disabled
+        if !config.network {
+            let netpol = build_deny_all_network_policy(&pod_name, &self.namespace);
+            self.netpol_api()
+                .create(&PostParams::default(), &netpol)
+                .await
+                .map_err(|e| {
+                    ProviderError::CreateFailed(format!("failed to create network policy: {e}"))
+                })?;
+        }
+
+        // Poll for pod to become Running (up to 60s, 500ms interval)
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
+        let interval = std::time::Duration::from_millis(500);
+
+        loop {
+            if tokio::time::Instant::now() >= deadline {
+                // Timeout — cleanup and return error
+                let _ = self.destroy(&pod_name).await;
+                return Err(ProviderError::Timeout(60));
+            }
+
+            match self.pods_api().get(&pod_name).await {
+                Ok(pod) => {
+                    let phase = pod
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.phase.as_deref());
+
+                    match phase {
+                        Some("Running") => return Ok(pod_name),
+                        Some("Failed") | Some("Succeeded") => {
+                            let _ = self.destroy(&pod_name).await;
+                            return Err(ProviderError::CreateFailed(format!(
+                                "pod entered {phase} phase",
+                                phase = phase.unwrap()
+                            )));
+                        }
+                        _ => {
+                            // Still pending — wait and retry
+                            tokio::time::sleep(interval).await;
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = self.destroy(&pod_name).await;
+                    return Err(ProviderError::CreateFailed(format!(
+                        "failed to get pod status: {e}"
+                    )));
+                }
+            }
+        }
+    }
+
+    async fn exec(
+        &self,
+        _id: &SandboxId,
+        _request: &ExecRequest,
+    ) -> Result<ExecOutput, ProviderError> {
+        todo!("exec will be implemented in Task 6")
+    }
+
+    async fn destroy(&self, id: &SandboxId) -> Result<(), ProviderError> {
+        // Delete the pod
+        match self
+            .pods_api()
+            .delete(id, &DeleteParams::default())
+            .await
+        {
+            Ok(_) => {}
+            Err(kube::Error::Api(ae)) if ae.code == 404 => {
+                return Err(ProviderError::NotFound(id.clone()));
+            }
+            Err(e) => {
+                return Err(ProviderError::ExecFailed(format!(
+                    "failed to delete pod: {e}"
+                )));
+            }
+        }
+
+        // Delete NetworkPolicy (ignore NotFound — may not exist if network=true)
+        let netpol_name = format!("roche-deny-{id}");
+        match self
+            .netpol_api()
+            .delete(&netpol_name, &DeleteParams::default())
+            .await
+        {
+            Ok(_) => {}
+            Err(kube::Error::Api(ae)) if ae.code == 404 => {
+                // Network policy doesn't exist — that's fine
+            }
+            Err(e) => {
+                return Err(ProviderError::ExecFailed(format!(
+                    "failed to delete network policy: {e}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn list(&self) -> Result<Vec<SandboxInfo>, ProviderError> {
+        todo!("list will be implemented in Task 7")
+    }
 }
 
 /// Build a Pod spec for a Roche sandbox.
-#[allow(dead_code)]
 fn build_pod(
     name: &str,
     namespace: &str,
@@ -251,7 +382,6 @@ fn build_pod(
 }
 
 /// Build a deny-all NetworkPolicy for a sandbox pod.
-#[allow(dead_code)]
 fn build_deny_all_network_policy(pod_name: &str, namespace: &str) -> NetworkPolicy {
     let policy_name = format!("roche-deny-{pod_name}");
     NetworkPolicy {
@@ -284,6 +414,18 @@ fn pod_phase_to_status(phase: Option<&str>) -> SandboxStatus {
         Some("Succeeded") => SandboxStatus::Stopped,
         Some("Failed") => SandboxStatus::Failed,
         _ => SandboxStatus::Stopped,
+    }
+}
+
+/// Escape a string for safe use in a shell command.
+#[allow(dead_code)]
+fn shell_escape(s: &str) -> String {
+    if s.chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '/' || c == '.')
+    {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
     }
 }
 
@@ -497,5 +639,13 @@ mod tests {
         let (code, output) = parse_exit_sentinel("no sentinel\n");
         assert_eq!(code, -1);
         assert_eq!(output, "no sentinel\n");
+    }
+
+    #[test]
+    fn test_shell_escape() {
+        assert_eq!(shell_escape("hello"), "hello");
+        assert_eq!(shell_escape("hello world"), "'hello world'");
+        assert_eq!(shell_escape("it's"), "'it'\\''s'");
+        assert_eq!(shell_escape("/usr/bin/python3"), "/usr/bin/python3");
     }
 }
