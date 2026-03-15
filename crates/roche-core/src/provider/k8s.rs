@@ -114,6 +114,7 @@ impl K8sProvider {
 }
 
 /// Build a Pod spec for a Roche sandbox.
+#[allow(dead_code)]
 fn build_pod(
     name: &str,
     namespace: &str,
