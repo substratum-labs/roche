@@ -41,7 +41,7 @@ export class GrpcTransport implements Transport {
 
   private async getClient(): Promise<any> {
     if (!this.client) {
-      const { SandboxServiceClient } = await import("../generated/roche/v1/sandbox");
+      const { SandboxServiceClient } = await import("../generated/roche/v1/sandbox.js");
       this.client = new SandboxServiceClient(
         `127.0.0.1:${this.port}`,
         grpc.credentials.createInsecure(),
