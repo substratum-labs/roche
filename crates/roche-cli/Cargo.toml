@@ -1,0 +1,28 @@
+[package]
+name = "roche-cli"
+description = "Universal sandbox orchestrator for AI agents — CLI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "roche"
+path = "src/main.rs"
+
+[dependencies]
+roche-core = { version = "0.1.0", path = "../roche-core", features = ["wasmtime", "e2b", "k8s"] }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde_json = "1"
+tonic = "0.12"
+prost = "0.13"
+dirs = "6"
+serde = { version = "1", features = ["derive"] }
+libc = "0.2"
+
+[build-dependencies]
+tonic-build = "0.12"

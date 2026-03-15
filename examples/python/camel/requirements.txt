@@ -1,0 +1,2 @@
+camel-ai>=0.2
+roche-sandbox

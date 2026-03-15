@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["crates/roche-core", "crates/roche-cli", "crates/roche-daemon"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/substratum-labs/roche"
+homepage = "https://github.com/substratum-labs/roche"
+keywords = ["sandbox", "docker", "ai", "agent"]
+categories = ["development-tools", "virtualization"]
