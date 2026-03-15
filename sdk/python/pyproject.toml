@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "roche-sandbox"
 version = "0.1.0"
 description = "Universal sandbox orchestrator for AI agents — Python SDK"
-license = "Apache-2.0"
+license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 readme = "README.md"
 keywords = ["sandbox", "docker", "ai", "agent", "wasm", "orchestrator"]

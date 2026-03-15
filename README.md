@@ -130,6 +130,21 @@ with roche.create(image="python:3.12-slim") as sandbox:
 
 See [Python SDK README](sdk/python/README.md) for full documentation.
 
+### Agent Framework Integrations
+
+Roche integrates with all major AI agent frameworks. Examples run in simulated mode by default — set the appropriate API key env var to enable real LLM calls.
+
+| Framework | Example | Env Var |
+|-----------|---------|---------|
+| [OpenAI Agents SDK](examples/python/openai-agents/) | Tool + code interpreter | `OPENAI_API_KEY` |
+| [LangChain / LangGraph](examples/python/langchain/) | Tool + stateful retry workflow | `OPENAI_API_KEY` |
+| [CrewAI](examples/python/crewai/) | Task + multi-agent crew | `OPENAI_API_KEY` |
+| [Anthropic API](examples/python/anthropic/) | tool_use + agentic loop | `ANTHROPIC_API_KEY` |
+| [AutoGen](examples/python/autogen/) | Code executor + group chat | `OPENAI_API_KEY` |
+| [Camel-AI](examples/python/camel/) | Toolkit + role-playing | `OPENAI_API_KEY` |
+
+See [examples/README.md](examples/README.md) for setup instructions.
+
 ## TypeScript SDK
 
 ```bash

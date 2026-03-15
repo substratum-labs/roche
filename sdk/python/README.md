@@ -91,6 +91,19 @@ from roche_sandbox import (
 )
 ```
 
+## Agent Framework Examples
+
+See [examples/python/](https://github.com/substratum-labs/roche/tree/main/examples/python) for integration examples with:
+
+- **OpenAI Agents SDK** — `@function_tool` integration
+- **LangChain / LangGraph** — custom `BaseTool` + stateful retry workflow
+- **CrewAI** — `@tool` decorator + multi-agent crew
+- **Anthropic API** — `tool_use` + multi-turn agentic loop
+- **AutoGen** — custom `CodeExecutor` + group chat
+- **Camel-AI** — `BaseToolkit` + role-playing session
+
+All examples run without API keys (simulated mode) and optionally switch to real LLM calls.
+
 ## License
 
 Apache-2.0 -- see [LICENSE](https://github.com/substratum-labs/roche/blob/main/LICENSE).

@@ -113,8 +113,11 @@ crates/
   roche-cli/        # Binary: CLI interface
   roche-daemon/     # gRPC daemon
 sdk/
-  python/           # Python SDK
-  typescript/       # TypeScript SDK
+  python/           # Python SDK (roche-sandbox on PyPI)
+  typescript/       # TypeScript SDK (roche-sandbox on npm)
+examples/
+  python/           # Python examples + agent framework integrations
+  typescript/       # TypeScript examples
 ```
 
 ## License
