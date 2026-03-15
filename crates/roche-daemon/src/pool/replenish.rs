@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 use super::{IdleSandbox, PoolKey, PoolManagerInner};
 use roche_core::provider::SandboxProvider;
 use roche_core::types::SandboxConfig;

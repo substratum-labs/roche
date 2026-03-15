@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 Substratum Labs
+
 """Roche — Universal sandbox orchestrator for AI agents (Python SDK)."""
 
 __version__ = "0.1.0"

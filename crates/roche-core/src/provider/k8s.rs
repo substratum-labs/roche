@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 // Kubernetes sandbox provider for Roche.
 
 use crate::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};

@@ -40,6 +40,10 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Secrets
+.env
+.env.*
+
 # Generated proto files
 sdk/typescript/src/generated/
 sdk/python/src/roche_sandbox/generated/

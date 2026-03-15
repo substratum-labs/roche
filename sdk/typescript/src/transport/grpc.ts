@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 import * as grpc from "@grpc/grpc-js";
 import type { Transport } from "./index";
 import type { SandboxConfig, ExecOutput, SandboxInfo, SandboxStatus } from "../types";

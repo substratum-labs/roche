@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 pub mod api_client;
 pub mod state;
 pub mod vsock_exec;

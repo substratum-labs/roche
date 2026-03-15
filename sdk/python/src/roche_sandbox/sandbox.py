@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 Substratum Labs
+
 from __future__ import annotations
 
 import asyncio

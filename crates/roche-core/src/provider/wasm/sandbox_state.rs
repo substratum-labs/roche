@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 //! In-memory sandbox state registry for the WASM provider.
 
 use crate::types::{SandboxConfig, SandboxId, SandboxInfo, SandboxStatus};

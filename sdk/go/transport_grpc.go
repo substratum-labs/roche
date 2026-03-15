@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 package roche
 
 import (
@@ -5,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	pb "github.com/roche-dev/roche-go/gen/roche/v1"
+	pb "github.com/substratum-labs/roche-go/gen/roche/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"

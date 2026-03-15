@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

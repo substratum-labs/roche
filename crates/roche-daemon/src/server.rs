@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 use crate::pool::PoolManager;
 use crate::proto;
 use roche_core::provider::docker::DockerProvider;

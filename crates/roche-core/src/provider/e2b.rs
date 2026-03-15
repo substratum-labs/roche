@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 use crate::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
 use crate::types::{ExecOutput, ExecRequest, SandboxConfig, SandboxId, SandboxInfo, SandboxStatus};
 use base64::Engine;

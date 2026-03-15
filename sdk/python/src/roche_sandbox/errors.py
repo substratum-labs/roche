@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 Substratum Labs
+
 class RocheError(Exception):
     def __init__(self, message: str):
         super().__init__(message)

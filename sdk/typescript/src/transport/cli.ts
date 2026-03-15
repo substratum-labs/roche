@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 import { execFile } from "child_process";
 import type { Transport } from "./index";
 import type { SandboxConfig, ExecOutput, SandboxInfo } from "../types";

@@ -5,7 +5,7 @@ Go client library for [Roche](https://github.com/roche-dev/roche), a universal s
 ## Installation
 
 ```bash
-go get github.com/roche-dev/roche-go
+go get github.com/substratum-labs/roche-go
 ```
 
 ## Quick Start
@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"log"
 
-	roche "github.com/roche-dev/roche-go"
+	roche "github.com/substratum-labs/roche-go"
 )
 
 func main() {

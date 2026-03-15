@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 export class RocheError extends Error {
   constructor(message: string) {
     super(message);

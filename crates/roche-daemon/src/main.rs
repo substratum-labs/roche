@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Substratum Labs
+
 use clap::Parser;
 use std::sync::Arc;
 use tonic::transport::Server;
