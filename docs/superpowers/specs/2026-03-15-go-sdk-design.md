@@ -75,11 +75,26 @@ func (c *Client) Exec(ctx context.Context, sandboxID string, command []string) (
 // Destroy destroys the specified sandbox.
 func (c *Client) Destroy(ctx context.Context, sandboxID string) error
 
+// DestroyMany destroys multiple sandboxes at once, returning the IDs that were destroyed.
+func (c *Client) DestroyMany(ctx context.Context, sandboxIDs []string) ([]string, error)
+
 // List returns all active sandboxes.
 func (c *Client) List(ctx context.Context) ([]SandboxInfo, error)
 
 // GC garbage-collects expired sandboxes.
 func (c *Client) GC(ctx context.Context, opts GCOptions) ([]string, error)
+
+// PoolStatus returns the current status of sandbox pools.
+func (c *Client) PoolStatus(ctx context.Context) ([]PoolInfo, error)
+
+// PoolWarmup warms up sandbox pools with the given configurations.
+func (c *Client) PoolWarmup(ctx context.Context, pools []PoolConfig) error
+
+// PoolDrain drains sandbox pools, destroying idle sandboxes.
+func (c *Client) PoolDrain(ctx context.Context, provider, image string) error
+
+// Close shuts down the client and releases resources (e.g. gRPC connection).
+func (c *Client) Close() error
 ```
 
 ### Options
@@ -99,6 +114,9 @@ func WithDaemonPort(port int) Option
 
 // WithProvider sets the default provider (default: "docker").
 func WithProvider(provider string) Option
+
+// WithDirectMode forces CLI transport, bypassing daemon auto-detection.
+func WithDirectMode() Option
 ```
 
 Internal config struct:
@@ -109,6 +127,7 @@ type clientConfig struct {
     binary     string  // default "roche"
     daemonPort int     // 0 = auto-detect
     provider   string  // default "docker"
+    directMode bool    // force CLI transport
 }
 ```
 
@@ -126,6 +145,13 @@ func New(opts ...Option) (*Client, error) {
 
     if cfg.transport != nil {
         return &Client{transport: cfg.transport, provider: cfg.provider}, nil
+    }
+
+    if cfg.directMode {
+        return &Client{
+            transport: newCLITransport(cfg.binary),
+            provider:  cfg.provider,
+        }, nil
     }
 
     // Auto-detect daemon
@@ -220,7 +246,7 @@ type SandboxConfig struct {
     Image       string
     Memory      string              // e.g. "512m", "1g"
     CPUs        float64             // e.g. 1.5
-    TimeoutSecs uint64              // default 300
+    TimeoutSecs uint64              // 0 = use server default (300); cannot express "no timeout"
     Network     bool                // default false (AI-safe)
     Writable    bool                // default false (AI-safe)
     Env         map[string]string
@@ -230,15 +256,21 @@ type SandboxConfig struct {
 }
 
 // Mount configures a host directory mount.
+// Use NewMount() to create mounts with AI-safe defaults (Readonly=true).
 type Mount struct {
     HostPath      string
     ContainerPath string
-    Readonly      bool  // default false
+    Readonly      bool
+}
+
+// NewMount creates a Mount with AI-safe defaults (Readonly=true).
+func NewMount(hostPath, containerPath string) Mount {
+    return Mount{HostPath: hostPath, ContainerPath: containerPath, Readonly: true}
 }
 
 // ExecOutput contains the result of executing a command.
 type ExecOutput struct {
-    ExitCode int
+    ExitCode int32
     Stdout   string
     Stderr   string
 }
@@ -266,6 +298,23 @@ type SandboxInfo struct {
 type GCOptions struct {
     DryRun bool
     All    bool
+}
+
+// PoolInfo contains metadata about a sandbox pool.
+type PoolInfo struct {
+    Provider    string
+    Image       string
+    IdleCount   uint32
+    ActiveCount uint32
+    MaxIdle     uint32
+    MaxTotal    uint32
+}
+
+// PoolConfig configures a sandbox pool for warmup.
+type PoolConfig struct {
+    Provider string
+    Image    string
+    Count    uint32
 }
 ```
 
@@ -321,6 +370,10 @@ type Transport interface {
     GC(ctx context.Context, provider string, dryRun, all bool) ([]string, error)
     CopyTo(ctx context.Context, sandboxID, hostPath, sandboxPath, provider string) error
     CopyFrom(ctx context.Context, sandboxID, sandboxPath, hostPath, provider string) error
+    PoolStatus(ctx context.Context) ([]PoolInfo, error)
+    PoolWarmup(ctx context.Context, pools []PoolConfig) error
+    PoolDrain(ctx context.Context, provider, image string) error
+    Close() error
 }
 ```
 
@@ -415,9 +468,16 @@ require (
 )
 ```
 
-Minimum Go 1.21 for `errors.Is()` improvements and `slices` package.
+Minimum Go 1.21 for `slog` structured logging and modern stdlib features.
 
 ## Proto Generation
+
+A `//go:generate` directive in `gen.go` triggers proto generation:
+
+```go
+//go:generate bash scripts/proto-gen.sh
+package roche
+```
 
 Script at `sdk/go/scripts/proto-gen.sh`:
 
