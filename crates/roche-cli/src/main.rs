@@ -787,7 +787,7 @@ macro_rules! run_provider_commands {
                 }
             }
             Commands::Cp { .. } => {
-                eprintln!("Error: file copy is only supported with the docker and e2b providers");
+                eprintln!("Error: file copy is only supported with the docker, e2b, and k8s providers");
                 std::process::exit(1);
             }
             Commands::Pool { .. } => unreachable!("pool handled earlier"),
@@ -837,6 +837,44 @@ async fn run(cli: Cli) -> Result<(), roche_core::provider::ProviderError> {
             use roche_core::provider::wasm::WasmProvider;
             let provider = WasmProvider::new()?;
             run_provider_commands!(provider, cli.command)
+        }
+        "k8s" => {
+            use roche_core::provider::k8s::K8sProvider;
+            let provider = K8sProvider::new().await?;
+            if let Commands::Cp { ref src, ref dest } = cli.command {
+                use roche_core::provider::SandboxFileOps;
+                match (parse_cp_path(src), parse_cp_path(dest)) {
+                    (Some((sandbox_id, sandbox_path)), None) => {
+                        provider
+                            .copy_from(
+                                &sandbox_id.to_string(),
+                                sandbox_path,
+                                std::path::Path::new(dest),
+                            )
+                            .await?;
+                    }
+                    (None, Some((sandbox_id, sandbox_path))) => {
+                        provider
+                            .copy_to(
+                                &sandbox_id.to_string(),
+                                std::path::Path::new(src),
+                                sandbox_path,
+                            )
+                            .await?;
+                    }
+                    (Some(_), Some(_)) => {
+                        eprintln!("Error: both source and destination cannot be sandbox paths");
+                        std::process::exit(1);
+                    }
+                    (None, None) => {
+                        eprintln!("Error: one of source or destination must be a sandbox path (sandbox_id:/path)");
+                        std::process::exit(1);
+                    }
+                }
+                Ok(())
+            } else {
+                run_provider_commands!(provider, cli.command)
+            }
         }
         "e2b" => {
             use roche_core::provider::e2b::E2bProvider;
