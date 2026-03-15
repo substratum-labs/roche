@@ -5,13 +5,16 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [[bin]]
 name = "roche"
 path = "src/main.rs"
 
 [dependencies]
-roche-core = { path = "../roche-core", features = ["wasmtime"] }
+roche-core = { version = "0.1.0", path = "../roche-core", features = ["wasmtime"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde_json = "1"
