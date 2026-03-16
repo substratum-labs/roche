@@ -6,6 +6,7 @@
 __version__ = "0.1.0"
 
 from roche_sandbox.client import AsyncRoche, Roche
+from roche_sandbox.decorator import roche_sandbox
 from roche_sandbox.errors import (
     ProviderUnavailable,
     RocheError,
@@ -33,4 +34,5 @@ __all__ = [
     "SandboxInfo",
     "SandboxStatus",
     "Mount",
+    "roche_sandbox",
 ]
