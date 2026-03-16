@@ -6,12 +6,10 @@
 use crate::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
 use crate::types::{ExecOutput, ExecRequest, SandboxConfig, SandboxId, SandboxInfo, SandboxStatus};
 use k8s_openapi::api::core::v1::{
-    Container, EmptyDirVolumeSource, EnvVar, Namespace, Pod, PodSpec,
-    ResourceRequirements, SecurityContext, Volume, VolumeMount,
+    Container, EmptyDirVolumeSource, EnvVar, Namespace, Pod, PodSpec, ResourceRequirements,
+    SecurityContext, Volume, VolumeMount,
 };
-use k8s_openapi::api::networking::v1::{
-    NetworkPolicy, NetworkPolicySpec,
-};
+use k8s_openapi::api::networking::v1::{NetworkPolicy, NetworkPolicySpec};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::api::{AttachParams, DeleteParams, ListParams, PostParams};
@@ -169,10 +167,7 @@ impl SandboxProvider for K8sProvider {
 
             match self.pods_api().get(&pod_name).await {
                 Ok(pod) => {
-                    let phase = pod
-                        .status
-                        .as_ref()
-                        .and_then(|s| s.phase.as_deref());
+                    let phase = pod.status.as_ref().and_then(|s| s.phase.as_deref());
 
                     match phase {
                         Some("Running") => return Ok(pod_name),
@@ -221,9 +216,7 @@ impl SandboxProvider for K8sProvider {
                 .exec(id, command, &attach_params)
                 .await
                 .map_err(|e| match &e {
-                    kube::Error::Api(ae) if ae.code == 404 => {
-                        ProviderError::NotFound(id.clone())
-                    }
+                    kube::Error::Api(ae) if ae.code == 404 => ProviderError::NotFound(id.clone()),
                     _ => ProviderError::ExecFailed(format!("failed to exec in pod: {e}")),
                 })?;
 
@@ -238,18 +231,16 @@ impl SandboxProvider for K8sProvider {
             let (stdout_result, stderr_result) = tokio::try_join!(
                 async {
                     let mut buf = Vec::new();
-                    stdout_reader
-                        .read_to_end(&mut buf)
-                        .await
-                        .map_err(|e| ProviderError::ExecFailed(format!("stdout read error: {e}")))?;
+                    stdout_reader.read_to_end(&mut buf).await.map_err(|e| {
+                        ProviderError::ExecFailed(format!("stdout read error: {e}"))
+                    })?;
                     Ok::<_, ProviderError>(String::from_utf8_lossy(&buf).to_string())
                 },
                 async {
                     let mut buf = Vec::new();
-                    stderr_reader
-                        .read_to_end(&mut buf)
-                        .await
-                        .map_err(|e| ProviderError::ExecFailed(format!("stderr read error: {e}")))?;
+                    stderr_reader.read_to_end(&mut buf).await.map_err(|e| {
+                        ProviderError::ExecFailed(format!("stderr read error: {e}"))
+                    })?;
                     Ok::<_, ProviderError>(String::from_utf8_lossy(&buf).to_string())
                 }
             )?;
@@ -275,11 +266,7 @@ impl SandboxProvider for K8sProvider {
 
     async fn destroy(&self, id: &SandboxId) -> Result<(), ProviderError> {
         // Delete the pod
-        match self
-            .pods_api()
-            .delete(id, &DeleteParams::default())
-            .await
-        {
+        match self.pods_api().delete(id, &DeleteParams::default()).await {
             Ok(_) => {}
             Err(kube::Error::Api(ae)) if ae.code == 404 => {
                 return Err(ProviderError::NotFound(id.clone()));
@@ -326,10 +313,7 @@ impl SandboxProvider for K8sProvider {
             let labels = pod.metadata.labels.unwrap_or_default();
             let annotations = pod.metadata.annotations.unwrap_or_default();
 
-            let image = labels
-                .get("roche.image")
-                .cloned()
-                .unwrap_or_default();
+            let image = labels.get("roche.image").cloned().unwrap_or_default();
 
             let expires_at = annotations
                 .get("roche.expires")
@@ -467,12 +451,14 @@ impl SandboxFileOps for K8sProvider {
         let mut stdin_writer = attached
             .stdin()
             .ok_or_else(|| ProviderError::FileFailed("no stdin stream".to_string()))?;
-        stdin_writer.write_all(&tar_buf).await.map_err(|e| {
-            ProviderError::FileFailed(format!("failed to write tar to stdin: {e}"))
-        })?;
-        stdin_writer.shutdown().await.map_err(|e| {
-            ProviderError::FileFailed(format!("failed to close stdin: {e}"))
-        })?;
+        stdin_writer
+            .write_all(&tar_buf)
+            .await
+            .map_err(|e| ProviderError::FileFailed(format!("failed to write tar to stdin: {e}")))?;
+        stdin_writer
+            .shutdown()
+            .await
+            .map_err(|e| ProviderError::FileFailed(format!("failed to close stdin: {e}")))?;
 
         // Read stderr to check for errors
         if let Some(mut stderr_reader) = attached.stderr() {
@@ -541,23 +527,19 @@ impl SandboxFileOps for K8sProvider {
 
         // Extract tar to local path
         let mut archive = tar::Archive::new(&tar_buf[..]);
-        let mut entries = archive.entries().map_err(|e| {
-            ProviderError::FileFailed(format!("failed to read tar entries: {e}"))
-        })?;
+        let mut entries = archive
+            .entries()
+            .map_err(|e| ProviderError::FileFailed(format!("failed to read tar entries: {e}")))?;
 
         if let Some(entry_result) = entries.next() {
-            let mut entry = entry_result.map_err(|e| {
-                ProviderError::FileFailed(format!("failed to read tar entry: {e}"))
-            })?;
+            let mut entry = entry_result
+                .map_err(|e| ProviderError::FileFailed(format!("failed to read tar entry: {e}")))?;
             let mut data = Vec::new();
             entry.read_to_end(&mut data).map_err(|e| {
                 ProviderError::FileFailed(format!("failed to read tar entry data: {e}"))
             })?;
             tokio::fs::write(dest, &data).await.map_err(|e| {
-                ProviderError::FileFailed(format!(
-                    "failed to write to {}: {e}",
-                    dest.display()
-                ))
+                ProviderError::FileFailed(format!("failed to write to {}: {e}", dest.display()))
             })?;
         } else {
             return Err(ProviderError::FileFailed(
@@ -570,11 +552,7 @@ impl SandboxFileOps for K8sProvider {
 }
 
 /// Build a Pod spec for a Roche sandbox.
-fn build_pod(
-    name: &str,
-    namespace: &str,
-    config: &crate::types::SandboxConfig,
-) -> Pod {
+fn build_pod(name: &str, namespace: &str, config: &crate::types::SandboxConfig) -> Pod {
     let mut labels = BTreeMap::new();
     labels.insert("roche.managed".to_string(), "true".to_string());
     labels.insert("roche.image".to_string(), config.image.clone());
@@ -853,7 +831,9 @@ mod tests {
 
         // Check env vars
         let env = container.env.as_ref().unwrap();
-        assert!(env.iter().any(|e| e.name == "FOO" && e.value == Some("bar".to_string())));
+        assert!(env
+            .iter()
+            .any(|e| e.name == "FOO" && e.value == Some("bar".to_string())));
 
         // writable=true means no readOnlyRootFilesystem
         let sc = container.security_context.as_ref().unwrap();
@@ -891,12 +871,7 @@ mod tests {
         let pod = build_pod("no-timeout-pod", "roche-sandboxes", &config);
 
         // No activeDeadlineSeconds when timeout_secs=0
-        assert!(pod
-            .spec
-            .as_ref()
-            .unwrap()
-            .active_deadline_seconds
-            .is_none());
+        assert!(pod.spec.as_ref().unwrap().active_deadline_seconds.is_none());
 
         // No roche.expires annotation
         assert!(pod.metadata.annotations.is_none());
@@ -908,14 +883,8 @@ mod tests {
     fn test_build_network_policy() {
         let np = build_deny_all_network_policy("my-pod", "roche-sandboxes");
 
-        assert_eq!(
-            np.metadata.name.as_deref(),
-            Some("roche-deny-my-pod")
-        );
-        assert_eq!(
-            np.metadata.namespace.as_deref(),
-            Some("roche-sandboxes")
-        );
+        assert_eq!(np.metadata.name.as_deref(), Some("roche-deny-my-pod"));
+        assert_eq!(np.metadata.namespace.as_deref(), Some("roche-sandboxes"));
 
         let spec = np.spec.as_ref().unwrap();
         let match_labels = spec.pod_selector.match_labels.as_ref().unwrap();

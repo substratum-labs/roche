@@ -4,9 +4,9 @@
 pub mod docker;
 #[cfg(feature = "e2b")]
 pub mod e2b;
+pub mod firecracker;
 #[cfg(feature = "k8s")]
 pub mod k8s;
-pub mod firecracker;
 #[cfg(feature = "wasmtime")]
 pub mod wasm;
 

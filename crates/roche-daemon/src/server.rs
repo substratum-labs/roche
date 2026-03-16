@@ -5,9 +5,9 @@ use crate::pool::PoolManager;
 use crate::proto;
 use roche_core::provider::docker::DockerProvider;
 use roche_core::provider::e2b::E2bProvider;
-use roche_core::provider::k8s::K8sProvider;
 #[cfg(target_os = "linux")]
 use roche_core::provider::firecracker::FirecrackerProvider;
+use roche_core::provider::k8s::K8sProvider;
 use roche_core::provider::wasm::WasmProvider;
 use roche_core::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
 use roche_core::types::{self, SandboxStatus};

@@ -140,10 +140,9 @@ impl E2bProvider {
     /// 2. `~/.roche/e2b.toml` config file (`api_key` field)
     pub fn new() -> Result<Self, ProviderError> {
         let api_key = Self::resolve_api_key()?;
-        let api_base = std::env::var("E2B_API_URL")
-            .unwrap_or_else(|_| DEFAULT_API_BASE.to_string());
-        let domain = std::env::var("E2B_DOMAIN")
-            .unwrap_or_else(|_| DEFAULT_DOMAIN.to_string());
+        let api_base =
+            std::env::var("E2B_API_URL").unwrap_or_else(|_| DEFAULT_API_BASE.to_string());
+        let domain = std::env::var("E2B_DOMAIN").unwrap_or_else(|_| DEFAULT_DOMAIN.to_string());
 
         Ok(Self {
             api_key,
@@ -675,8 +674,7 @@ impl SandboxFileOps for E2bProvider {
 
         let form = reqwest::multipart::Form::new().part(
             "file",
-            reqwest::multipart::Part::bytes(file_content)
-                .file_name(file_name.to_string()),
+            reqwest::multipart::Part::bytes(file_content).file_name(file_name.to_string()),
         );
 
         let resp = self
@@ -811,8 +809,7 @@ mod tests {
     #[test]
     fn test_envd_auth_header() {
         let auth = E2bProvider::envd_auth("test-token");
-        let expected_b64 =
-            base64::engine::general_purpose::STANDARD.encode("test-token:");
+        let expected_b64 = base64::engine::general_purpose::STANDARD.encode("test-token:");
         assert_eq!(auth, format!("Basic {expected_b64}"));
     }
 

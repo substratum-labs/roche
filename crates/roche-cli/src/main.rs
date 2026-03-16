@@ -790,7 +790,9 @@ macro_rules! run_provider_commands {
                 }
             }
             Commands::Cp { .. } => {
-                eprintln!("Error: file copy is only supported with the docker, e2b, and k8s providers");
+                eprintln!(
+                    "Error: file copy is only supported with the docker, e2b, and k8s providers"
+                );
                 std::process::exit(1);
             }
             Commands::Pool { .. } => unreachable!("pool handled earlier"),

@@ -35,6 +35,7 @@ jobs:
       - uses: arduino/setup-protoc@v3
         with:
           version: "28.x"
+      - run: pip install grpcio-tools>=1.60.0
       - run: cd sdk/python && bash scripts/proto-gen.sh
       - run: pip install -e "sdk/python[dev]"
       - run: pytest sdk/python/tests/ -v
