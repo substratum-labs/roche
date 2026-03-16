@@ -106,7 +106,13 @@ class CliTransport:
                 stderr=asyncio.subprocess.PIPE,
             )
         except FileNotFoundError:
-            raise ProviderUnavailable(f"Roche binary not found: {self._binary}")
+            raise ProviderUnavailable(
+                f"Roche CLI not found: '{self._binary}'\n\n"
+                "Install the Roche CLI using one of these methods:\n"
+                "  pip install roche-sandbox[cli]   # auto-download prebuilt binary\n"
+                "  cargo install roche-cli          # build from source\n"
+                "  # or download from https://github.com/substratum-labs/roche/releases"
+            )
         stdout_bytes, stderr_bytes = await proc.communicate()
         return stdout_bytes.decode(), stderr_bytes.decode(), proc.returncode or 0
 

@@ -125,7 +125,8 @@ List all active Roche-managed sandboxes.
 ## Python SDK
 
 ```bash
-pip install roche-sandbox
+pip install roche-sandbox          # SDK only
+pip install roche-sandbox[cli]     # SDK + prebuilt CLI binary
 ```
 
 ```python

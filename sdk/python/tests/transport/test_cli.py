@@ -166,5 +166,5 @@ class TestCliTransportOther:
 
     async def test_binary_not_found(self, transport):
         with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
-            with pytest.raises(ProviderUnavailable):
+            with pytest.raises(ProviderUnavailable, match="pip install roche-sandbox\\[cli\\]"):
                 await transport.create(SandboxConfig(), "docker")

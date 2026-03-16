@@ -10,7 +10,15 @@ Python SDK for [Roche](https://github.com/substratum-labs/roche) -- universal sa
 ## Install
 
 ```bash
-pip install roche-sandbox
+pip install roche-sandbox          # SDK only (requires Roche CLI installed separately)
+pip install roche-sandbox[cli]     # SDK + auto-download prebuilt CLI binary
+```
+
+If you installed without `[cli]`, you can download the CLI later:
+
+```bash
+roche-install-cli                  # downloads from GitHub Releases
+cargo install roche-cli            # or build from source
 ```
 
 ## Quick Start
