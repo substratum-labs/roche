@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## Unreleased
+
+### Added
+
+- `@roche_sandbox` decorator for automatic sandbox injection in Python SDK — supports sync/async, signature stripping for agent framework compatibility
+
 ## 0.1.0 (2025-03-15)
 
 ### Added

@@ -84,12 +84,64 @@ The SDK provides two API styles:
 from roche_sandbox import (
     Roche, AsyncRoche,
     Sandbox, AsyncSandbox,
+    roche_sandbox,                 # decorator
     SandboxConfig, ExecOutput, SandboxInfo,
     Mount, SandboxStatus,
     RocheError, SandboxNotFound, SandboxPaused,
     ProviderUnavailable, TimeoutError, UnsupportedOperation,
 )
 ```
+
+## `@roche_sandbox` Decorator
+
+The decorator automatically creates and injects a sandbox into your function — no manual lifecycle management needed. Works with both sync and async functions.
+
+```python
+from roche_sandbox import roche_sandbox
+
+@roche_sandbox(image="python:3.12-slim")
+def run_code(code: str, sandbox) -> str:
+    result = sandbox.exec(["python3", "-c", code])
+    return result.stdout
+
+output = run_code("print('hello')")  # sandbox is auto-managed
+```
+
+### Async
+
+```python
+@roche_sandbox(image="python:3.12-slim")
+async def run_code(code: str, sandbox) -> str:
+    result = await sandbox.exec(["python3", "-c", code])
+    return result.stdout
+```
+
+### Agent Framework Integration
+
+The decorator strips the `sandbox` parameter from the function signature, so agent frameworks (OpenAI, LangChain, CrewAI, etc.) only see user-facing parameters:
+
+```python
+from agents import function_tool
+
+@function_tool
+@roche_sandbox(image="python:3.12-slim")
+def run_code(code: str, sandbox) -> str:
+    """Execute Python code in a sandbox."""
+    return sandbox.exec(["python3", "-c", code]).stdout
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `image` | `str` | `"python:3.12-slim"` | Container image |
+| `provider` | `str` | `"docker"` | Sandbox provider |
+| `network` | `bool` | `False` | Enable network access |
+| `writable` | `bool` | `False` | Enable writable filesystem |
+| `timeout_secs` | `int` | `300` | Sandbox timeout |
+| `memory` | `str \| None` | `None` | Memory limit (e.g. `"512m"`) |
+| `cpus` | `float \| None` | `None` | CPU limit |
+| `sandbox_param` | `str` | `"sandbox"` | Name of the injected parameter |
 
 ## Agent Framework Examples
 

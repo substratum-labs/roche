@@ -142,6 +142,20 @@ with roche.create(image="python:3.12-slim") as sandbox:
     result = sandbox.exec(["echo", "hello"])
 ```
 
+### `@roche_sandbox` Decorator
+
+Auto-inject a sandbox into any function — works with agent framework decorators:
+
+```python
+from roche_sandbox import roche_sandbox
+
+@roche_sandbox(image="python:3.12-slim")
+def run_code(code: str, sandbox) -> str:
+    return sandbox.exec(["python3", "-c", code]).stdout
+
+output = run_code("print('hello')")  # sandbox auto-created and destroyed
+```
+
 See [Python SDK README](sdk/python/README.md) for full documentation.
 
 ### Agent Framework Integrations
