@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Substratum Labs
 
-use roche_core::sensor::{
-    ExecutionTrace, ResourceUsage, TraceLevel,
-};
+use roche_core::sensor::{ExecutionTrace, ResourceUsage, TraceLevel};
 
 #[test]
 fn test_trace_level_default() {

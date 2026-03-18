@@ -38,15 +38,16 @@ async fn test_trace_standard_detects_file_writes() {
     config.writable = true;
     let id = provider.create(&config).await.unwrap();
 
-    let collector = sensor
-        .start_trace(&id, TraceLevel::Standard)
-        .await
-        .unwrap();
+    let collector = sensor.start_trace(&id, TraceLevel::Standard).await.unwrap();
     let _output = provider
         .exec(
             &id,
             &ExecRequest {
-                command: vec!["sh".into(), "-c".into(), "echo test > /tmp/output.txt".into()],
+                command: vec![
+                    "sh".into(),
+                    "-c".into(),
+                    "echo test > /tmp/output.txt".into(),
+                ],
                 timeout_secs: Some(10),
             },
         )
