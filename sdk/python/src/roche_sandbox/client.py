@@ -81,9 +81,9 @@ class AsyncRoche:
         return sb.id
 
     async def exec(
-        self, sandbox_id: str, command: list[str], timeout_secs: int | None = None
+        self, sandbox_id: str, command: list[str], timeout_secs: int | None = None, trace_level: str | None = None
     ) -> ExecOutput:
-        return await self._transport.exec(sandbox_id, command, self._provider, timeout_secs)
+        return await self._transport.exec(sandbox_id, command, self._provider, timeout_secs, trace_level=trace_level)
 
     async def destroy(self, sandbox_id: str) -> None:
         await self._transport.destroy([sandbox_id], self._provider)
@@ -107,9 +107,9 @@ class Roche:
         return asyncio.run(self._async.create_id(**kwargs))
 
     def exec(
-        self, sandbox_id: str, command: list[str], timeout_secs: int | None = None
+        self, sandbox_id: str, command: list[str], timeout_secs: int | None = None, trace_level: str | None = None
     ) -> ExecOutput:
-        return asyncio.run(self._async.exec(sandbox_id, command, timeout_secs))
+        return asyncio.run(self._async.exec(sandbox_id, command, timeout_secs, trace_level=trace_level))
 
     def destroy(self, sandbox_id: str) -> None:
         asyncio.run(self._async.destroy(sandbox_id))

@@ -26,8 +26,8 @@ class AsyncSandbox:
     def provider(self) -> str:
         return self._provider
 
-    async def exec(self, command: list[str], timeout_secs: int | None = None) -> ExecOutput:
-        return await self._transport.exec(self._id, command, self._provider, timeout_secs)
+    async def exec(self, command: list[str], timeout_secs: int | None = None, trace_level: str | None = None) -> ExecOutput:
+        return await self._transport.exec(self._id, command, self._provider, timeout_secs, trace_level=trace_level)
 
     async def pause(self) -> None:
         await self._transport.pause(self._id, self._provider)
@@ -63,8 +63,8 @@ class Sandbox:
     def provider(self) -> str:
         return self._inner.provider
 
-    def exec(self, command: list[str], timeout_secs: int | None = None) -> ExecOutput:
-        return asyncio.run(self._inner.exec(command, timeout_secs))
+    def exec(self, command: list[str], timeout_secs: int | None = None, trace_level: str | None = None) -> ExecOutput:
+        return asyncio.run(self._inner.exec(command, timeout_secs, trace_level=trace_level))
 
     def pause(self) -> None:
         asyncio.run(self._inner.pause())

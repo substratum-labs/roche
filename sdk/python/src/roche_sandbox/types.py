@@ -6,6 +6,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from roche_sandbox.trace import ExecutionTrace
+
 SandboxStatus = Literal["running", "paused", "stopped", "failed"]
 
 
@@ -36,6 +38,7 @@ class ExecOutput:
     exit_code: int
     stdout: str
     stderr: str
+    trace: ExecutionTrace | None = None
 
 
 @dataclass
