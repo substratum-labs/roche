@@ -70,6 +70,7 @@ pub async fn run_replenish_loop(inner: Arc<Mutex<PoolManagerInner>>, notify: Arc
                         mounts: vec![],
                         kernel: None,
                         rootfs: None,
+                        trace_enabled: true,
                     };
 
                     let create_result = {

@@ -50,6 +50,10 @@ pub struct SandboxConfig {
     /// Path to ext4 rootfs image (Firecracker only).
     #[serde(default)]
     pub rootfs: Option<String>,
+
+    /// Enable execution tracing. Default: true.
+    #[serde(default = "default_true")]
+    pub trace_enabled: bool,
 }
 
 /// Configuration for a volume mount.
@@ -69,6 +73,10 @@ fn default_timeout() -> u64 {
     300
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Default for SandboxConfig {
     fn default() -> Self {
         Self {
@@ -83,6 +91,7 @@ impl Default for SandboxConfig {
             mounts: Vec::new(),
             kernel: None,
             rootfs: None,
+            trace_enabled: true,
         }
     }
 }
@@ -120,6 +129,8 @@ pub struct ExecOutput {
     pub exit_code: i32,
     pub stdout: String,
     pub stderr: String,
+    #[serde(default)]
+    pub trace: Option<crate::sensor::ExecutionTrace>,
 }
 
 #[cfg(test)]
