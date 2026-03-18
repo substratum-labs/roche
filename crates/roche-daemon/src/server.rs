@@ -10,6 +10,7 @@ use roche_core::provider::firecracker::FirecrackerProvider;
 use roche_core::provider::k8s::K8sProvider;
 use roche_core::provider::wasm::WasmProvider;
 use roche_core::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
+use roche_core::sensor::{DockerSensor, SensorDispatch, TraceLevel};
 use roche_core::types::{self, SandboxStatus};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
@@ -22,6 +23,8 @@ pub struct SandboxServiceImpl {
     firecracker: Option<FirecrackerProvider>,
     wasm: Option<WasmProvider>,
     pool_manager: Arc<PoolManager>,
+    docker_sensor: SensorDispatch,
+    none_sensor: SensorDispatch,
 }
 
 impl SandboxServiceImpl {
@@ -34,6 +37,15 @@ impl SandboxServiceImpl {
             firecracker: FirecrackerProvider::new().ok(),
             wasm: WasmProvider::new().ok(),
             pool_manager,
+            docker_sensor: SensorDispatch::Docker(DockerSensor),
+            none_sensor: SensorDispatch::None,
+        }
+    }
+
+    fn get_sensor(&self, provider: &str) -> &SensorDispatch {
+        match provider {
+            "docker" => &self.docker_sensor,
+            _ => &self.none_sensor,
         }
     }
 }
@@ -57,6 +69,70 @@ fn sandbox_status_to_proto(status: SandboxStatus) -> i32 {
         SandboxStatus::Paused => proto::SandboxStatus::Paused as i32,
         SandboxStatus::Stopped => proto::SandboxStatus::Stopped as i32,
         SandboxStatus::Failed => proto::SandboxStatus::Failed as i32,
+    }
+}
+
+fn trace_to_proto(trace: roche_core::sensor::ExecutionTrace) -> proto::ExecutionTrace {
+    use roche_core::sensor::FileOp;
+
+    proto::ExecutionTrace {
+        duration_secs: trace.duration_secs,
+        resource_usage: Some(proto::ResourceUsage {
+            peak_memory_bytes: trace.resource_usage.peak_memory_bytes,
+            cpu_time_secs: trace.resource_usage.cpu_time_secs,
+            network_rx_bytes: trace.resource_usage.network_rx_bytes,
+            network_tx_bytes: trace.resource_usage.network_tx_bytes,
+        }),
+        file_accesses: trace
+            .file_accesses
+            .into_iter()
+            .map(|fa| proto::FileAccess {
+                path: fa.path,
+                op: match fa.op {
+                    FileOp::Read => proto::FileOp::Read as i32,
+                    FileOp::Write => proto::FileOp::Write as i32,
+                    FileOp::Create => proto::FileOp::Create as i32,
+                    FileOp::Delete => proto::FileOp::Delete as i32,
+                },
+                size_bytes: fa.size_bytes,
+            })
+            .collect(),
+        network_attempts: trace
+            .network_attempts
+            .into_iter()
+            .map(|na| proto::NetworkAttempt {
+                address: na.address,
+                protocol: na.protocol,
+                allowed: na.allowed,
+            })
+            .collect(),
+        blocked_ops: trace
+            .blocked_ops
+            .into_iter()
+            .map(|bo| proto::BlockedOperation {
+                op_type: bo.op_type,
+                detail: bo.detail,
+            })
+            .collect(),
+        syscalls: trace
+            .syscalls
+            .into_iter()
+            .map(|sc| proto::SyscallEvent {
+                name: sc.name,
+                args: sc.args,
+                result: sc.result,
+                timestamp_ms: sc.timestamp_ms,
+            })
+            .collect(),
+        resource_timeline: trace
+            .resource_timeline
+            .into_iter()
+            .map(|rs| proto::ResourceSnapshot {
+                timestamp_ms: rs.timestamp_ms,
+                memory_bytes: rs.memory_bytes,
+                cpu_percent: rs.cpu_percent,
+            })
+            .collect(),
     }
 }
 
@@ -178,17 +254,43 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
             timeout_secs: req.timeout_secs,
         };
         let provider_name = default_provider(&req.provider);
+        let trace_level = TraceLevel::from_proto(req.trace_level);
+
+        // Start trace collector if tracing is enabled
+        let sensor = self.get_sensor(provider_name);
+        let collector = if trace_level != TraceLevel::Off {
+            sensor.start_trace(&req.sandbox_id, trace_level).await
+        } else {
+            None
+        };
 
         with_provider!(self, provider_name, |p| {
-            let output = p
-                .exec(&req.sandbox_id, &exec_req)
-                .await
-                .map_err(provider_error_to_status)?;
-            Ok(Response::new(proto::ExecResponse {
-                exit_code: output.exit_code,
-                stdout: output.stdout,
-                stderr: output.stderr,
-            }))
+            let result = p.exec(&req.sandbox_id, &exec_req).await;
+
+            match result {
+                Ok(output) => {
+                    // Finish trace collection
+                    let trace = if let Some(c) = collector {
+                        c.finish().await.ok().map(trace_to_proto)
+                    } else {
+                        None
+                    };
+
+                    Ok(Response::new(proto::ExecResponse {
+                        exit_code: output.exit_code,
+                        stdout: output.stdout,
+                        stderr: output.stderr,
+                        trace,
+                    }))
+                }
+                Err(e) => {
+                    // Abort trace collection on error
+                    if let Some(c) = collector {
+                        c.abort().await;
+                    }
+                    Err(provider_error_to_status(e))
+                }
+            }
         })
     }
 
