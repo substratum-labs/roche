@@ -1,4 +1,6 @@
-use roche_core::sensor::docker::{parse_docker_diff, parse_memory_bytes, parse_net_rx, parse_net_tx};
+use roche_core::sensor::docker::{
+    parse_docker_diff, parse_memory_bytes, parse_net_rx, parse_net_tx,
+};
 use roche_core::sensor::types::FileOp;
 
 #[test]

@@ -123,10 +123,7 @@ impl DockerTraceCollector {
                     .first()
                     .map(|v| parse_net_rx(v.trim()))
                     .unwrap_or(0);
-                let tx = io_parts
-                    .get(1)
-                    .map(|v| parse_net_tx(v.trim()))
-                    .unwrap_or(0);
+                let tx = io_parts.get(1).map(|v| parse_net_tx(v.trim())).unwrap_or(0);
                 (rx, tx)
             })
             .unwrap_or((0, 0));
@@ -140,9 +137,7 @@ impl DockerTraceCollector {
     }
 
     /// Collect file accesses via `docker diff`.
-    async fn collect_file_accesses(
-        &self,
-    ) -> Result<Vec<super::types::FileAccess>, ProviderError> {
+    async fn collect_file_accesses(&self) -> Result<Vec<super::types::FileAccess>, ProviderError> {
         let output = tokio::process::Command::new("docker")
             .args(["diff", &self.container_id])
             .output()
