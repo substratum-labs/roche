@@ -399,6 +399,7 @@ impl E2bProvider {
             exit_code: exit_code.unwrap_or(-1),
             stdout,
             stderr,
+            trace: None,
         })
     }
 }

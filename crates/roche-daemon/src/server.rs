@@ -152,6 +152,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
                 .collect(),
             kernel: req.kernel,
             rootfs: req.rootfs,
+            trace_enabled: true,
         };
 
         // Try pool first

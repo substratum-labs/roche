@@ -206,6 +206,7 @@ impl SandboxProvider for DockerProvider {
                     exit_code,
                     stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                     stderr: stderr_str,
+                    trace: None,
                 })
             }
             Ok(Err(e)) => Err(ProviderError::ExecFailed(e.to_string())),
