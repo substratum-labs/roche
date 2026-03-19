@@ -46,7 +46,13 @@ describe("Roche", () => {
   it("exec delegates to transport with default provider", async () => {
     const roche = new Roche({ transport });
     await roche.exec("abc", ["echo", "hello"]);
-    expect(transport.exec).toHaveBeenCalledWith("abc", ["echo", "hello"], "docker", undefined);
+    expect(transport.exec).toHaveBeenCalledWith("abc", ["echo", "hello"], "docker", undefined, undefined);
+  });
+
+  it("exec passes traceLevel to transport", async () => {
+    const roche = new Roche({ transport });
+    await roche.exec("abc", ["echo", "hello"], undefined, "standard");
+    expect(transport.exec).toHaveBeenCalledWith("abc", ["echo", "hello"], "docker", undefined, "standard");
   });
 
   it("destroy delegates to transport", async () => {

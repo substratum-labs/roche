@@ -2,8 +2,11 @@
 // Copyright 2025 Substratum Labs
 
 import { execFile } from "child_process";
+import { performance } from "perf_hooks";
 import type { Transport } from "./index";
 import type { SandboxConfig, ExecOutput, SandboxInfo } from "../types";
+import type { TraceLevel } from "../trace";
+import { ExecutionTrace } from "../trace";
 import { DEFAULTS } from "../types";
 import {
   RocheError,
@@ -51,15 +54,26 @@ export class CliTransport implements Transport {
     command: string[],
     provider: string,
     timeoutSecs?: number,
+    traceLevel?: TraceLevel,
   ): Promise<ExecOutput> {
     const args = ["exec", "--sandbox", sandboxId];
     if (timeoutSecs != null) args.push("--timeout", String(timeoutSecs));
     args.push("--", ...command);
 
+    const includeTrace = traceLevel !== undefined && traceLevel !== "off";
+    const start = performance.now();
+
     try {
       const { stdout, stderr } = await this.run(args, false);
-      return { exitCode: 0, stdout, stderr };
+      const durationSecs = (performance.now() - start) / 1000;
+      return {
+        exitCode: 0,
+        stdout,
+        stderr,
+        trace: includeTrace ? this.basicTrace(durationSecs) : undefined,
+      };
     } catch (err: any) {
+      const durationSecs = (performance.now() - start) / 1000;
       if (err.stderr && this.isRocheError(err.stderr)) {
         throw this.mapCliError(err.stderr);
       }
@@ -67,8 +81,16 @@ export class CliTransport implements Transport {
         exitCode: err.code ?? 1,
         stdout: err.stdout ?? "",
         stderr: err.stderr ?? "",
+        trace: includeTrace ? this.basicTrace(durationSecs) : undefined,
       };
     }
+  }
+
+  private basicTrace(durationSecs: number): ExecutionTrace {
+    return new ExecutionTrace({
+      durationSecs,
+      resourceUsage: { peakMemoryBytes: 0, cpuTimeSecs: 0, networkRxBytes: 0, networkTxBytes: 0 },
+    });
   }
 
   async destroy(

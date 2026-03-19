@@ -4,6 +4,8 @@
 import * as grpc from "@grpc/grpc-js";
 import type { Transport } from "./index";
 import type { SandboxConfig, ExecOutput, SandboxInfo, SandboxStatus } from "../types";
+import type { TraceLevel } from "../trace";
+import { TRACE_LEVEL_MAP, protoToExecutionTrace } from "../trace";
 import { DEFAULTS } from "../types";
 import {
   RocheError,
@@ -72,9 +74,24 @@ export class GrpcTransport implements Transport {
     return response.sandboxId;
   }
 
-  async exec(sandboxId: string, command: string[], provider: string, timeoutSecs?: number): Promise<ExecOutput> {
-    const response = await this.call("exec", { sandboxId, command, provider, timeoutSecs });
-    return { exitCode: response.exitCode, stdout: response.stdout, stderr: response.stderr };
+  async exec(
+    sandboxId: string,
+    command: string[],
+    provider: string,
+    timeoutSecs?: number,
+    traceLevel?: TraceLevel,
+  ): Promise<ExecOutput> {
+    const request: any = { sandboxId, command, provider, timeoutSecs };
+    if (traceLevel !== undefined) {
+      request.traceLevel = TRACE_LEVEL_MAP[traceLevel];
+    }
+    const response = await this.call("exec", request);
+    return {
+      exitCode: response.exitCode,
+      stdout: response.stdout,
+      stderr: response.stderr,
+      trace: response.trace ? protoToExecutionTrace(response.trace) : undefined,
+    };
   }
 
   async destroy(sandboxIds: string[], provider: string, all?: boolean): Promise<string[]> {
