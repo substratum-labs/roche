@@ -251,6 +251,7 @@ impl SandboxProvider for K8sProvider {
                 exit_code,
                 stdout: clean_stdout,
                 stderr: stderr_result,
+                trace: None,
             })
         };
 

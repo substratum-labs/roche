@@ -5,17 +5,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
+from roche_sandbox.daemon import _find_bundled_binary
 from roche_sandbox.errors import (
     ProviderUnavailable, RocheError, SandboxNotFound, SandboxPaused,
     TimeoutError, UnsupportedOperation,
 )
+from roche_sandbox.trace import ExecutionTrace, ResourceUsage
 from roche_sandbox.types import ExecOutput, SandboxConfig, SandboxInfo
 
 
 class CliTransport:
     def __init__(self, binary: str = "roche"):
-        self._binary = binary
+        bundled = _find_bundled_binary("roche")
+        self._binary = str(bundled) if bundled else binary
 
     async def create(self, config: SandboxConfig, provider: str) -> str:
         args = [
@@ -43,15 +47,26 @@ class CliTransport:
         stdout, _ = await self._run(args)
         return stdout.strip()
 
-    async def exec(self, sandbox_id: str, command: list[str], provider: str, timeout_secs: int | None = None) -> ExecOutput:
+    async def exec(self, sandbox_id: str, command: list[str], provider: str, timeout_secs: int | None = None, trace_level: str | None = None) -> ExecOutput:
         args = ["exec", "--sandbox", sandbox_id]
         if timeout_secs is not None:
             args.extend(["--timeout", str(timeout_secs)])
         args.extend(["--", *command])
+        t0 = time.monotonic()
         stdout, stderr, returncode = await self._run_unchecked(args)
+        duration = time.monotonic() - t0
         if returncode != 0 and self._is_roche_error(stderr):
             raise self._map_cli_error(stderr)
-        return ExecOutput(exit_code=returncode, stdout=stdout, stderr=stderr)
+        trace = None
+        if trace_level is not None and trace_level != "off":
+            trace = ExecutionTrace(
+                duration_secs=round(duration, 3),
+                resource_usage=ResourceUsage(
+                    peak_memory_bytes=0, cpu_time_secs=0.0,
+                    network_rx_bytes=0, network_tx_bytes=0,
+                ),
+            )
+        return ExecOutput(exit_code=returncode, stdout=stdout, stderr=stderr, trace=trace)
 
     async def destroy(self, sandbox_ids: list[str], provider: str, all: bool = False) -> list[str]:
         args = ["destroy"]

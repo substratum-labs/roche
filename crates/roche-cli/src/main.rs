@@ -675,6 +675,7 @@ macro_rules! run_provider_commands {
                     mounts: mount_configs,
                     kernel,
                     rootfs,
+                    trace_enabled: true,
                 };
                 for _ in 0..count {
                     match provider.create(&config).await {

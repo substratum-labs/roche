@@ -100,6 +100,19 @@ fn build_create_args(config: &SandboxConfig) -> Vec<String> {
         ]);
     }
 
+    // Seccomp tracing profile (best-effort)
+    if config.trace_enabled {
+        if let Some(home) = dirs::home_dir() {
+            let seccomp_path = home.join(".roche").join("seccomp-trace.json");
+            if seccomp_path.exists() {
+                args.extend([
+                    "--security-opt".into(),
+                    format!("seccomp={}", seccomp_path.display()),
+                ]);
+            }
+        }
+    }
+
     // Image + keep-alive command
     args.push(config.image.clone());
     args.extend(["sleep".into(), "infinity".into()]);
@@ -186,6 +199,7 @@ impl SandboxProvider for DockerProvider {
                     exit_code,
                     stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                     stderr: stderr_str,
+                    trace: None,
                 })
             }
             Ok(Err(e)) => Err(ProviderError::ExecFailed(e.to_string())),

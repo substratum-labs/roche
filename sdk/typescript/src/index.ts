@@ -19,3 +19,13 @@ export {
   TimeoutError,
   UnsupportedOperation,
 } from "./errors";
+export {
+  ExecutionTrace,
+  TraceLevel,
+  type ResourceUsage,
+  type FileAccess,
+  type NetworkAttempt,
+  type BlockedOperation,
+  type SyscallEvent,
+  type ResourceSnapshot,
+} from "./trace";
