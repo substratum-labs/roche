@@ -157,6 +157,35 @@ describe("CliTransport", () => {
     expect(args).toContain("--all");
   });
 
+  it("exec returns trace with duration when traceLevel is set", async () => {
+    mockSuccess("hello\n", "");
+    const output = await transport.exec("abc", ["echo", "hello"], "docker", undefined, "standard");
+    expect(output.trace).toBeDefined();
+    expect(output.trace!.durationSecs).toBeGreaterThan(0);
+    expect(output.trace!.resourceUsage.peakMemoryBytes).toBe(0);
+    expect(output.trace!.fileAccesses).toEqual([]);
+  });
+
+  it("exec returns no trace when traceLevel is undefined", async () => {
+    mockSuccess("hello\n", "");
+    const output = await transport.exec("abc", ["echo", "hello"], "docker");
+    expect(output.trace).toBeUndefined();
+  });
+
+  it("exec returns no trace when traceLevel is off", async () => {
+    mockSuccess("hello\n", "");
+    const output = await transport.exec("abc", ["echo", "hello"], "docker", undefined, "off");
+    expect(output.trace).toBeUndefined();
+  });
+
+  it("exec returns trace with duration on non-zero exit", async () => {
+    mockError(1, "command failed");
+    const output = await transport.exec("abc", ["false"], "docker", undefined, "summary");
+    expect(output.exitCode).toBe(1);
+    expect(output.trace).toBeDefined();
+    expect(output.trace!.durationSecs).toBeGreaterThan(0);
+  });
+
   it("throws ProviderUnavailable when binary not found", async () => {
     mockExecFile.mockImplementation(
       (_file: any, _args: any, _opts: any, cb: any) => {

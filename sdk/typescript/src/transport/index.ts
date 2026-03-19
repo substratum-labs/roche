@@ -2,6 +2,7 @@
 // Copyright 2025 Substratum Labs
 
 import type { SandboxConfig, ExecOutput, SandboxInfo } from "../types";
+import type { TraceLevel } from "../trace";
 
 export interface Transport {
   create(config: SandboxConfig, provider: string): Promise<string>;
@@ -9,7 +10,8 @@ export interface Transport {
     sandboxId: string,
     command: string[],
     provider: string,
-    timeoutSecs?: number
+    timeoutSecs?: number,
+    traceLevel?: TraceLevel,
   ): Promise<ExecOutput>;
   destroy(
     sandboxIds: string[],

@@ -3,6 +3,7 @@
 
 import type { Transport } from "./transport";
 import type { ExecOutput } from "./types";
+import type { TraceLevel } from "./trace";
 
 export class Sandbox {
   constructor(
@@ -11,8 +12,8 @@ export class Sandbox {
     private readonly transport: Transport,
   ) {}
 
-  async exec(command: string[], timeoutSecs?: number): Promise<ExecOutput> {
-    return this.transport.exec(this.id, command, this.provider, timeoutSecs);
+  async exec(command: string[], timeoutSecs?: number, traceLevel?: TraceLevel): Promise<ExecOutput> {
+    return this.transport.exec(this.id, command, this.provider, timeoutSecs, traceLevel);
   }
 
   async pause(): Promise<void> { await this.transport.pause(this.id, this.provider); }

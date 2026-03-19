@@ -134,4 +134,61 @@ describe("GrpcTransport", () => {
       expect.any(Function),
     );
   });
+
+  it("exec passes traceLevel to proto request", async () => {
+    mockClient.exec.mockImplementation(
+      (req: any, cb: any) => cb(null, { exitCode: 0, stdout: "", stderr: "" })
+    );
+    await transport.exec("abc", ["echo"], "docker", undefined, "full");
+    expect(mockClient.exec).toHaveBeenCalledWith(
+      expect.objectContaining({ traceLevel: 3 }),
+      expect.any(Function),
+    );
+  });
+
+  it("exec omits traceLevel from request when undefined", async () => {
+    mockClient.exec.mockImplementation(
+      (req: any, cb: any) => cb(null, { exitCode: 0, stdout: "", stderr: "" })
+    );
+    await transport.exec("abc", ["echo"], "docker");
+    const requestArg = mockClient.exec.mock.calls[0][0];
+    expect(requestArg.traceLevel).toBeUndefined();
+  });
+
+  it("exec parses trace from proto response", async () => {
+    mockClient.exec.mockImplementation(
+      (req: any, cb: any) => cb(null, {
+        exitCode: 0,
+        stdout: "ok",
+        stderr: "",
+        trace: {
+          durationSecs: 1.5,
+          resourceUsage: {
+            peakMemoryBytes: 100_000_000,
+            cpuTimeSecs: 0.5,
+            networkRxBytes: 0,
+            networkTxBytes: 0,
+          },
+          fileAccesses: [{ path: "/tmp/out.txt", op: 2, sizeBytes: 100 }],
+          networkAttempts: [],
+          blockedOps: [],
+          syscalls: [],
+          resourceTimeline: [],
+        },
+      })
+    );
+    const output = await transport.exec("abc", ["echo"], "docker", undefined, "standard");
+    expect(output.trace).toBeDefined();
+    expect(output.trace!.durationSecs).toBe(1.5);
+    expect(output.trace!.fileAccesses[0].op).toBe("create");
+    expect(output.trace!.fileAccesses[0].path).toBe("/tmp/out.txt");
+  });
+
+  it("exec returns undefined trace when response has no trace", async () => {
+    mockClient.exec.mockImplementation(
+      (req: any, cb: any) => cb(null, { exitCode: 0, stdout: "", stderr: "" })
+    );
+    const output = await transport.exec("abc", ["echo"], "docker");
+    expect(output.trace).toBeUndefined();
+  });
 });
