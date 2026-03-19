@@ -7,6 +7,7 @@ import asyncio
 import json
 import time
 
+from roche_sandbox.daemon import _find_bundled_binary
 from roche_sandbox.errors import (
     ProviderUnavailable, RocheError, SandboxNotFound, SandboxPaused,
     TimeoutError, UnsupportedOperation,
@@ -17,7 +18,8 @@ from roche_sandbox.types import ExecOutput, SandboxConfig, SandboxInfo
 
 class CliTransport:
     def __init__(self, binary: str = "roche"):
-        self._binary = binary
+        bundled = _find_bundled_binary("roche")
+        self._binary = str(bundled) if bundled else binary
 
     async def create(self, config: SandboxConfig, provider: str) -> str:
         args = [

@@ -1,0 +1,109 @@
+name: Python SDK Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-binaries:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            use_cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build (native)
+        if: ${{ !matrix.use_cross }}
+        run: cargo build --release --target ${{ matrix.target }} -p roche-cli -p roche-daemon
+      - name: Build (cross)
+        if: matrix.use_cross
+        run: cross build --release --target ${{ matrix.target }} -p roche-cli -p roche-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/roche
+            target/${{ matrix.target }}/release/roched
+
+  build-wheels:
+    needs: build-binaries
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            platform_tag: manylinux2014_x86_64
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            platform_tag: manylinux2014_aarch64
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            platform_tag: macosx_10_12_x86_64
+            os: macos-13
+          - target: aarch64-apple-darwin
+            platform_tag: macosx_11_0_arm64
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: binaries
+      - name: Place binaries in package
+        run: |
+          mkdir -p sdk/python/src/roche_sandbox/bin
+          cp binaries/roche sdk/python/src/roche_sandbox/bin/ || true
+          cp binaries/roched sdk/python/src/roche_sandbox/bin/ || true
+          chmod +x sdk/python/src/roche_sandbox/bin/* 2>/dev/null || true
+      - name: Build wheel
+        env:
+          ROCHE_PLATFORM_TAG: ${{ matrix.platform_tag }}
+        run: |
+          pip install hatchling build
+          cd sdk/python
+          python -m build --wheel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.target }}
+          path: sdk/python/dist/*.whl
+
+  publish:
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Publish to PyPI
+        run: |
+          pip install twine
+          twine upload --skip-existing dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}

@@ -12,7 +12,9 @@ use roche_core::provider::wasm::WasmProvider;
 use roche_core::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
 use roche_core::sensor::{DockerSensor, SensorDispatch, TraceLevel};
 use roche_core::types::{self, SandboxStatus};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tonic::{Request, Response, Status};
 
 pub struct SandboxServiceImpl {
@@ -23,6 +25,7 @@ pub struct SandboxServiceImpl {
     firecracker: Option<FirecrackerProvider>,
     wasm: Option<WasmProvider>,
     pool_manager: Arc<PoolManager>,
+    pub last_rpc_ms: Arc<AtomicU64>,
     docker_sensor: SensorDispatch,
     none_sensor: SensorDispatch,
 }
@@ -37,9 +40,25 @@ impl SandboxServiceImpl {
             firecracker: FirecrackerProvider::new().ok(),
             wasm: WasmProvider::new().ok(),
             pool_manager,
+            last_rpc_ms: Arc::new(AtomicU64::new(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+            )),
             docker_sensor: SensorDispatch::Docker(DockerSensor),
             none_sensor: SensorDispatch::None,
         }
+    }
+
+    fn touch_last_rpc(&self) {
+        self.last_rpc_ms.store(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+            Ordering::Relaxed,
+        );
     }
 
     fn get_sensor(&self, provider: &str) -> &SensorDispatch {
@@ -203,6 +222,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::CreateRequest>,
     ) -> Result<Response<proto::CreateResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let config = types::SandboxConfig {
             provider: req.provider.clone(),
@@ -248,6 +268,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::ExecRequest>,
     ) -> Result<Response<proto::ExecResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let exec_req = types::ExecRequest {
             command: req.command,
@@ -298,6 +319,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::DestroyRequest>,
     ) -> Result<Response<proto::DestroyResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let provider_name = default_provider(&req.provider);
 
@@ -329,6 +351,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::ListRequest>,
     ) -> Result<Response<proto::ListResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let provider_name = default_provider(&req.provider);
 
@@ -352,6 +375,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::PauseRequest>,
     ) -> Result<Response<proto::PauseResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let provider_name = default_provider(&req.provider);
 
@@ -367,6 +391,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::UnpauseRequest>,
     ) -> Result<Response<proto::UnpauseResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let provider_name = default_provider(&req.provider);
 
@@ -382,6 +407,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::GcRequest>,
     ) -> Result<Response<proto::GcResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let provider_name = default_provider(&req.provider);
 
@@ -424,6 +450,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::CopyToRequest>,
     ) -> Result<Response<proto::CopyToResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         self.docker
             .copy_to(
@@ -440,6 +467,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::CopyFromRequest>,
     ) -> Result<Response<proto::CopyFromResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         self.docker
             .copy_from(
@@ -456,6 +484,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         _request: Request<proto::PoolStatusRequest>,
     ) -> Result<Response<proto::PoolStatusResponse>, Status> {
+        self.touch_last_rpc();
         let statuses = self.pool_manager.status().await;
         let pools = statuses
             .into_iter()
@@ -475,6 +504,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         _request: Request<proto::PoolWarmupRequest>,
     ) -> Result<Response<proto::PoolWarmupResponse>, Status> {
+        self.touch_last_rpc();
         self.pool_manager.warmup().await;
         Ok(Response::new(proto::PoolWarmupResponse {}))
     }
@@ -483,6 +513,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         _request: Request<proto::PoolDrainRequest>,
     ) -> Result<Response<proto::PoolDrainResponse>, Status> {
+        self.touch_last_rpc();
         let destroyed = self.pool_manager.drain().await;
         Ok(Response::new(proto::PoolDrainResponse {
             destroyed_count: destroyed,
