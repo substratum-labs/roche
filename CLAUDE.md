@@ -59,6 +59,6 @@ crates/
 ## Sister Projects
 
 - **Castor** (`../castor/`) — Security microkernel for LLM agents. Roche does not depend on Castor.
-- **Tiphys** (`../tiphys/`) — Digital Life Form agent. Bridges Castor + Roche for safe agent execution.
+- **Tiphys** (`../tiphys/`) — AI agent. Bridges Castor + Roche for safe agent execution.
 - **castor-internal** (`../castor-internal/`) — Private design docs, cross-project status.
   - Read `status/PROGRESS.md` for current cross-project state.
