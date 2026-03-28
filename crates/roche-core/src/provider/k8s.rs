@@ -373,10 +373,8 @@ impl SandboxLifecycle for K8sProvider {
             let annotations = pod.metadata.annotations.unwrap_or_default();
             if let Some(expires_str) = annotations.get("roche.expires") {
                 if let Ok(expires_at) = expires_str.parse::<u64>() {
-                    if expires_at <= now {
-                        if self.destroy(&name).await.is_ok() {
-                            destroyed.push(name);
-                        }
+                    if expires_at <= now && self.destroy(&name).await.is_ok() {
+                        destroyed.push(name);
                     }
                 }
             }
