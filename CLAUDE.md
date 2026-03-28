@@ -55,3 +55,10 @@ crates/
 - Provider implementations go in `provider/` submodules
 - Prefer `&str` over `String` in function parameters where possible
 - Use `#[tokio::main]` in CLI, `async fn` in library code
+
+## Sister Projects
+
+- **Castor** (`../castor/`) — Security microkernel for LLM agents. Roche does not depend on Castor.
+- **Tiphys** (`../tiphys/`) — Digital Life Form agent. Bridges Castor + Roche for safe agent execution.
+- **castor-internal** (`../castor-internal/`) — Private design docs, cross-project status.
+  - Read `status/PROGRESS.md` for current cross-project state.
