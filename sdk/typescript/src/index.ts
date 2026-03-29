@@ -3,6 +3,8 @@
 
 export { Roche } from "./roche";
 export type { RocheOptions } from "./roche";
+export { run } from "./run";
+export type { RunOptions } from "./run";
 export { Sandbox } from "./sandbox";
 export type {
   SandboxConfig,
