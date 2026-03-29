@@ -27,7 +27,7 @@ func TestSandboxExec(t *testing.T) {
 	var gotID string
 	var gotCmd []string
 	mt := &mockTransport{
-		execFn: func(_ context.Context, id string, cmd []string, _ string, _ *uint64) (*ExecOutput, error) {
+		execFn: func(_ context.Context, id string, cmd []string, _ string, _ *ExecOptions) (*ExecOutput, error) {
 			gotID = id
 			gotCmd = cmd
 			return expected, nil

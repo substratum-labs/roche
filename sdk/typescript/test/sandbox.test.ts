@@ -29,14 +29,32 @@ describe("Sandbox", () => {
   it("exec delegates to transport with stored provider", async () => {
     const sb = new Sandbox("abc", "docker", transport);
     const output = await sb.exec(["echo", "hi"]);
-    expect(transport.exec).toHaveBeenCalledWith("abc", ["echo", "hi"], "docker", undefined);
+    expect(transport.exec).toHaveBeenCalledWith("abc", ["echo", "hi"], "docker", undefined, undefined, undefined);
     expect(output.exitCode).toBe(0);
   });
 
   it("exec passes timeout", async () => {
     const sb = new Sandbox("abc", "docker", transport);
     await sb.exec(["sleep", "10"], 5);
-    expect(transport.exec).toHaveBeenCalledWith("abc", ["sleep", "10"], "docker", 5);
+    expect(transport.exec).toHaveBeenCalledWith("abc", ["sleep", "10"], "docker", 5, undefined, undefined);
+  });
+
+  it("exec passes traceLevel to transport", async () => {
+    const sb = new Sandbox("abc", "docker", transport);
+    await sb.exec(["echo", "hi"], undefined, "full");
+    expect(transport.exec).toHaveBeenCalledWith("abc", ["echo", "hi"], "docker", undefined, "full", undefined);
+  });
+
+  it("exec passes undefined traceLevel by default", async () => {
+    const sb = new Sandbox("abc", "docker", transport);
+    await sb.exec(["echo", "hi"]);
+    expect(transport.exec).toHaveBeenCalledWith("abc", ["echo", "hi"], "docker", undefined, undefined, undefined);
+  });
+
+  it("exec passes idempotencyKey to transport", async () => {
+    const sb = new Sandbox("abc", "docker", transport);
+    await sb.exec(["echo", "hi"], undefined, undefined, "key-123");
+    expect(transport.exec).toHaveBeenCalledWith("abc", ["echo", "hi"], "docker", undefined, undefined, "key-123");
   });
 
   it("pause delegates to transport", async () => {

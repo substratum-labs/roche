@@ -2,6 +2,7 @@
 // Copyright 2025 Substratum Labs
 
 pub mod provider;
+pub mod sensor;
 pub mod types;
 
 pub use provider::capabilities::{validate_config, FieldSupport, ProviderCapabilities};

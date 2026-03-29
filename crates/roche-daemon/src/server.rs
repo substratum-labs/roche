@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Substratum Labs
 
+use crate::idempotency::IdempotencyCache;
 use crate::pool::PoolManager;
 use crate::proto;
 use roche_core::provider::docker::DockerProvider;
@@ -10,8 +11,11 @@ use roche_core::provider::firecracker::FirecrackerProvider;
 use roche_core::provider::k8s::K8sProvider;
 use roche_core::provider::wasm::WasmProvider;
 use roche_core::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
+use roche_core::sensor::{DockerSensor, SensorDispatch, TraceLevel};
 use roche_core::types::{self, SandboxStatus};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tonic::{Request, Response, Status};
 
 pub struct SandboxServiceImpl {
@@ -22,6 +26,10 @@ pub struct SandboxServiceImpl {
     firecracker: Option<FirecrackerProvider>,
     wasm: Option<WasmProvider>,
     pool_manager: Arc<PoolManager>,
+    pub last_rpc_ms: Arc<AtomicU64>,
+    docker_sensor: SensorDispatch,
+    none_sensor: SensorDispatch,
+    idempotency_cache: IdempotencyCache,
 }
 
 impl SandboxServiceImpl {
@@ -34,6 +42,32 @@ impl SandboxServiceImpl {
             firecracker: FirecrackerProvider::new().ok(),
             wasm: WasmProvider::new().ok(),
             pool_manager,
+            last_rpc_ms: Arc::new(AtomicU64::new(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+            )),
+            docker_sensor: SensorDispatch::Docker(DockerSensor),
+            none_sensor: SensorDispatch::None,
+            idempotency_cache: IdempotencyCache::new(),
+        }
+    }
+
+    fn touch_last_rpc(&self) {
+        self.last_rpc_ms.store(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+            Ordering::Relaxed,
+        );
+    }
+
+    fn get_sensor(&self, provider: &str) -> &SensorDispatch {
+        match provider {
+            "docker" => &self.docker_sensor,
+            _ => &self.none_sensor,
         }
     }
 }
@@ -57,6 +91,70 @@ fn sandbox_status_to_proto(status: SandboxStatus) -> i32 {
         SandboxStatus::Paused => proto::SandboxStatus::Paused as i32,
         SandboxStatus::Stopped => proto::SandboxStatus::Stopped as i32,
         SandboxStatus::Failed => proto::SandboxStatus::Failed as i32,
+    }
+}
+
+fn trace_to_proto(trace: roche_core::sensor::ExecutionTrace) -> proto::ExecutionTrace {
+    use roche_core::sensor::FileOp;
+
+    proto::ExecutionTrace {
+        duration_secs: trace.duration_secs,
+        resource_usage: Some(proto::ResourceUsage {
+            peak_memory_bytes: trace.resource_usage.peak_memory_bytes,
+            cpu_time_secs: trace.resource_usage.cpu_time_secs,
+            network_rx_bytes: trace.resource_usage.network_rx_bytes,
+            network_tx_bytes: trace.resource_usage.network_tx_bytes,
+        }),
+        file_accesses: trace
+            .file_accesses
+            .into_iter()
+            .map(|fa| proto::FileAccess {
+                path: fa.path,
+                op: match fa.op {
+                    FileOp::Read => proto::FileOp::Read as i32,
+                    FileOp::Write => proto::FileOp::Write as i32,
+                    FileOp::Create => proto::FileOp::Create as i32,
+                    FileOp::Delete => proto::FileOp::Delete as i32,
+                },
+                size_bytes: fa.size_bytes,
+            })
+            .collect(),
+        network_attempts: trace
+            .network_attempts
+            .into_iter()
+            .map(|na| proto::NetworkAttempt {
+                address: na.address,
+                protocol: na.protocol,
+                allowed: na.allowed,
+            })
+            .collect(),
+        blocked_ops: trace
+            .blocked_ops
+            .into_iter()
+            .map(|bo| proto::BlockedOperation {
+                op_type: bo.op_type,
+                detail: bo.detail,
+            })
+            .collect(),
+        syscalls: trace
+            .syscalls
+            .into_iter()
+            .map(|sc| proto::SyscallEvent {
+                name: sc.name,
+                args: sc.args,
+                result: sc.result,
+                timestamp_ms: sc.timestamp_ms,
+            })
+            .collect(),
+        resource_timeline: trace
+            .resource_timeline
+            .into_iter()
+            .map(|rs| proto::ResourceSnapshot {
+                timestamp_ms: rs.timestamp_ms,
+                memory_bytes: rs.memory_bytes,
+                cpu_percent: rs.cpu_percent,
+            })
+            .collect(),
     }
 }
 
@@ -127,6 +225,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::CreateRequest>,
     ) -> Result<Response<proto::CreateResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let config = types::SandboxConfig {
             provider: req.provider.clone(),
@@ -152,6 +251,9 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
                 .collect(),
             kernel: req.kernel,
             rootfs: req.rootfs,
+            trace_enabled: true,
+            network_allowlist: req.network_allowlist,
+            fs_paths: req.fs_paths,
         };
 
         // Try pool first
@@ -171,23 +273,67 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::ExecRequest>,
     ) -> Result<Response<proto::ExecResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
+
+        // Check idempotency cache
+        let idempotency_key = req.idempotency_key.clone();
+        if let Some(ref key) = idempotency_key {
+            if let Some(cached) = self.idempotency_cache.get(key) {
+                return Ok(Response::new(cached));
+            }
+        }
+
         let exec_req = types::ExecRequest {
             command: req.command,
             timeout_secs: req.timeout_secs,
+            idempotency_key: idempotency_key.clone(),
         };
         let provider_name = default_provider(&req.provider);
+        let trace_level = TraceLevel::from_proto(req.trace_level);
+
+        // Start trace collector if tracing is enabled
+        let sensor = self.get_sensor(provider_name);
+        let collector = if trace_level != TraceLevel::Off {
+            sensor.start_trace(&req.sandbox_id, trace_level).await
+        } else {
+            None
+        };
 
         with_provider!(self, provider_name, |p| {
-            let output = p
-                .exec(&req.sandbox_id, &exec_req)
-                .await
-                .map_err(provider_error_to_status)?;
-            Ok(Response::new(proto::ExecResponse {
-                exit_code: output.exit_code,
-                stdout: output.stdout,
-                stderr: output.stderr,
-            }))
+            let result = p.exec(&req.sandbox_id, &exec_req).await;
+
+            match result {
+                Ok(output) => {
+                    // Finish trace collection
+                    let trace = if let Some(c) = collector {
+                        c.finish().await.ok().map(trace_to_proto)
+                    } else {
+                        None
+                    };
+
+                    let response = proto::ExecResponse {
+                        exit_code: output.exit_code,
+                        stdout: output.stdout,
+                        stderr: output.stderr,
+                        trace,
+                    };
+
+                    // Cache response for idempotent requests
+                    if let Some(key) = idempotency_key {
+                        self.idempotency_cache.put(key, response.clone());
+                    }
+
+                    Ok(Response::new(response))
+                }
+                Err(e) => {
+                    // Abort trace collection on error
+                    if let Some(c) = collector {
+                        c.abort().await;
+                    }
+                    Err(provider_error_to_status(e))
+                }
+            }
         })
     }
 
@@ -195,6 +341,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::DestroyRequest>,
     ) -> Result<Response<proto::DestroyResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let provider_name = default_provider(&req.provider);
 
@@ -226,6 +373,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::ListRequest>,
     ) -> Result<Response<proto::ListResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let provider_name = default_provider(&req.provider);
 
@@ -249,6 +397,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::PauseRequest>,
     ) -> Result<Response<proto::PauseResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let provider_name = default_provider(&req.provider);
 
@@ -264,6 +413,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::UnpauseRequest>,
     ) -> Result<Response<proto::UnpauseResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let provider_name = default_provider(&req.provider);
 
@@ -279,6 +429,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::GcRequest>,
     ) -> Result<Response<proto::GcResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         let provider_name = default_provider(&req.provider);
 
@@ -321,6 +472,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::CopyToRequest>,
     ) -> Result<Response<proto::CopyToResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         self.docker
             .copy_to(
@@ -337,6 +489,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         request: Request<proto::CopyFromRequest>,
     ) -> Result<Response<proto::CopyFromResponse>, Status> {
+        self.touch_last_rpc();
         let req = request.into_inner();
         self.docker
             .copy_from(
@@ -353,6 +506,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         _request: Request<proto::PoolStatusRequest>,
     ) -> Result<Response<proto::PoolStatusResponse>, Status> {
+        self.touch_last_rpc();
         let statuses = self.pool_manager.status().await;
         let pools = statuses
             .into_iter()
@@ -372,6 +526,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         _request: Request<proto::PoolWarmupRequest>,
     ) -> Result<Response<proto::PoolWarmupResponse>, Status> {
+        self.touch_last_rpc();
         self.pool_manager.warmup().await;
         Ok(Response::new(proto::PoolWarmupResponse {}))
     }
@@ -380,6 +535,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         &self,
         _request: Request<proto::PoolDrainRequest>,
     ) -> Result<Response<proto::PoolDrainResponse>, Status> {
+        self.touch_last_rpc();
         let destroyed = self.pool_manager.drain().await;
         Ok(Response::new(proto::PoolDrainResponse {
             destroyed_count: destroyed,

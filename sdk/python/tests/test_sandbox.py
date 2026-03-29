@@ -25,14 +25,20 @@ class TestAsyncSandbox:
         t = mock_transport()
         sb = AsyncSandbox("abc", "docker", t)
         output = await sb.exec(["echo", "hi"])
-        t.exec.assert_called_once_with("abc", ["echo", "hi"], "docker", None)
+        t.exec.assert_called_once_with("abc", ["echo", "hi"], "docker", None, trace_level=None, idempotency_key=None)
         assert output.exit_code == 0
 
     async def test_exec_with_timeout(self):
         t = mock_transport()
         sb = AsyncSandbox("abc", "docker", t)
         await sb.exec(["sleep", "10"], timeout_secs=5)
-        t.exec.assert_called_once_with("abc", ["sleep", "10"], "docker", 5)
+        t.exec.assert_called_once_with("abc", ["sleep", "10"], "docker", 5, trace_level=None, idempotency_key=None)
+
+    async def test_exec_with_idempotency_key(self):
+        t = mock_transport()
+        sb = AsyncSandbox("abc", "docker", t)
+        await sb.exec(["echo", "hi"], idempotency_key="key-123")
+        t.exec.assert_called_once_with("abc", ["echo", "hi"], "docker", None, trace_level=None, idempotency_key="key-123")
 
     async def test_pause(self):
         t = mock_transport()

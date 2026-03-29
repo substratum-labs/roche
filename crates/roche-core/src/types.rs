@@ -50,6 +50,21 @@ pub struct SandboxConfig {
     /// Path to ext4 rootfs image (Firecracker only).
     #[serde(default)]
     pub rootfs: Option<String>,
+
+    /// Enable execution tracing. Default: true.
+    #[serde(default = "default_true")]
+    pub trace_enabled: bool,
+
+    /// Network allowlist: when `network` is true, restrict to these hosts.
+    /// Empty = unrestricted. E.g., ["api.openai.com", "cdn.example.com"]
+    #[serde(default)]
+    pub network_allowlist: Vec<String>,
+
+    /// Filesystem path whitelist: writable paths when filesystem is otherwise read-only.
+    /// Empty = default behavior (writable flag controls everything).
+    /// E.g., ["/data", "/tmp"]
+    #[serde(default)]
+    pub fs_paths: Vec<String>,
 }
 
 /// Configuration for a volume mount.
@@ -69,6 +84,10 @@ fn default_timeout() -> u64 {
     300
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Default for SandboxConfig {
     fn default() -> Self {
         Self {
@@ -83,6 +102,9 @@ impl Default for SandboxConfig {
             mounts: Vec::new(),
             kernel: None,
             rootfs: None,
+            trace_enabled: true,
+            network_allowlist: Vec::new(),
+            fs_paths: Vec::new(),
         }
     }
 }
@@ -112,6 +134,9 @@ pub struct SandboxInfo {
 pub struct ExecRequest {
     pub command: Vec<String>,
     pub timeout_secs: Option<u64>,
+    /// Optional idempotency key. If set, duplicate execs with the same key
+    /// return the cached result instead of re-executing.
+    pub idempotency_key: Option<String>,
 }
 
 /// Output from executing a command.
@@ -120,6 +145,8 @@ pub struct ExecOutput {
     pub exit_code: i32,
     pub stdout: String,
     pub stderr: String,
+    #[serde(default)]
+    pub trace: Option<crate::sensor::ExecutionTrace>,
 }
 
 #[cfg(test)]

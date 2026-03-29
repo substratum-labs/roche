@@ -142,6 +142,8 @@ impl SandboxProvider for K8sProvider {
             unpause: false,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::NotApplicable,
+            fs_paths: FieldSupport::NotApplicable,
         }
     }
 
@@ -265,6 +267,7 @@ impl SandboxProvider for K8sProvider {
                 exit_code,
                 stdout: clean_stdout,
                 stderr: stderr_result,
+                trace: None,
             })
         };
 

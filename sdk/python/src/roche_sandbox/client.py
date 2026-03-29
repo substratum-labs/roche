@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from roche_sandbox.daemon import detect_daemon
+from roche_sandbox.daemon import detect_daemon, _find_bundled_binary, _spawn_daemon, _wait_for_daemon_ready
 from roche_sandbox.sandbox import AsyncSandbox, Sandbox
 from roche_sandbox.transport.cli import CliTransport
 from roche_sandbox.transport.grpc import GrpcTransport
@@ -38,7 +38,19 @@ class AsyncRoche:
             if daemon is not None:
                 self._transport = GrpcTransport(port=daemon["port"])
             else:
-                self._transport = CliTransport(binary=binary)
+                roched_path = _find_bundled_binary("roched")
+                if roched_path:
+                    _spawn_daemon(roched_path)
+                    if _wait_for_daemon_ready(timeout=3.0):
+                        daemon = detect_daemon()
+                        if daemon is not None:
+                            self._transport = GrpcTransport(port=daemon["port"])
+                        else:
+                            self._transport = CliTransport(binary=binary)
+                    else:
+                        self._transport = CliTransport(binary=binary)
+                else:
+                    self._transport = CliTransport(binary=binary)
 
     @property
     def transport(self) -> Transport:
@@ -81,9 +93,9 @@ class AsyncRoche:
         return sb.id
 
     async def exec(
-        self, sandbox_id: str, command: list[str], timeout_secs: int | None = None
+        self, sandbox_id: str, command: list[str], timeout_secs: int | None = None, trace_level: str | None = None
     ) -> ExecOutput:
-        return await self._transport.exec(sandbox_id, command, self._provider, timeout_secs)
+        return await self._transport.exec(sandbox_id, command, self._provider, timeout_secs, trace_level=trace_level)
 
     async def destroy(self, sandbox_id: str) -> None:
         await self._transport.destroy([sandbox_id], self._provider)
@@ -107,9 +119,9 @@ class Roche:
         return asyncio.run(self._async.create_id(**kwargs))
 
     def exec(
-        self, sandbox_id: str, command: list[str], timeout_secs: int | None = None
+        self, sandbox_id: str, command: list[str], timeout_secs: int | None = None, trace_level: str | None = None
     ) -> ExecOutput:
-        return asyncio.run(self._async.exec(sandbox_id, command, timeout_secs))
+        return asyncio.run(self._async.exec(sandbox_id, command, timeout_secs, trace_level=trace_level))
 
     def destroy(self, sandbox_id: str) -> None:
         asyncio.run(self._async.destroy(sandbox_id))

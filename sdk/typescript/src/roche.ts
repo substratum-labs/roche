@@ -7,6 +7,7 @@ import { GrpcTransport } from "./transport/grpc";
 import { detectDaemon } from "./daemon";
 import { Sandbox } from "./sandbox";
 import type { SandboxConfig, ExecOutput, SandboxInfo } from "./types";
+import type { TraceLevel } from "./trace";
 import { DEFAULTS } from "./types";
 
 export interface RocheOptions {
@@ -53,9 +54,9 @@ export class Roche {
     return transport.create(config, config.provider ?? this.provider);
   }
 
-  async exec(sandboxId: string, command: string[], timeoutSecs?: number): Promise<ExecOutput> {
+  async exec(sandboxId: string, command: string[], timeoutSecs?: number, traceLevel?: TraceLevel): Promise<ExecOutput> {
     const transport = await this.getTransport();
-    return transport.exec(sandboxId, command, this.provider, timeoutSecs);
+    return transport.exec(sandboxId, command, this.provider, timeoutSecs, traceLevel);
   }
 
   async destroy(sandboxId: string): Promise<void> {

@@ -8,7 +8,7 @@ import "context"
 // Transport defines the low-level communication protocol with the Roche backend.
 type Transport interface {
 	Create(ctx context.Context, cfg SandboxConfig, provider string) (string, error)
-	Exec(ctx context.Context, sandboxID string, command []string, provider string, timeoutSecs *uint64) (*ExecOutput, error)
+	Exec(ctx context.Context, sandboxID string, command []string, provider string, opts *ExecOptions) (*ExecOutput, error)
 	Destroy(ctx context.Context, sandboxIDs []string, provider string, all bool) ([]string, error)
 	List(ctx context.Context, provider string) ([]SandboxInfo, error)
 	Pause(ctx context.Context, sandboxID, provider string) error

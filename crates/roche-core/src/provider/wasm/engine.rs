@@ -130,6 +130,7 @@ impl WasmEngine {
             exit_code,
             stdout,
             stderr,
+            trace: None,
         })
     }
 }

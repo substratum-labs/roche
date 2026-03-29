@@ -147,6 +147,8 @@ impl SandboxProvider for FirecrackerProvider {
             unpause: true,
             copy_to: false,
             copy_from: false,
+            network_allowlist: FieldSupport::NotApplicable,
+            fs_paths: FieldSupport::NotApplicable,
         }
     }
 

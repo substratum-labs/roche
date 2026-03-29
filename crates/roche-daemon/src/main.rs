@@ -2,7 +2,9 @@
 // Copyright 2025 Substratum Labs
 
 use clap::Parser;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tonic::transport::Server;
 
 pub mod proto {
@@ -10,8 +12,11 @@ pub mod proto {
 }
 
 mod gc;
+mod idempotency;
 mod pool;
 mod server;
+
+const SECCOMP_TRACE_PROFILE: &str = include_str!("seccomp-trace.json");
 
 #[derive(Parser)]
 #[command(name = "roched", about = "Roche sandbox orchestrator daemon")]
@@ -23,6 +28,10 @@ struct Args {
     /// Pool configuration (format: provider/image?min=N&max=N&total=N&idle_timeout=N)
     #[arg(long = "pool")]
     pools: Vec<String>,
+
+    /// Idle timeout in seconds (0 = disabled, run forever)
+    #[arg(long, default_value = "0", env = "ROCHE_DAEMON_IDLE_TIMEOUT")]
+    idle_timeout: u64,
 }
 
 #[tokio::main]
@@ -63,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pool_manager.initial_warmup().await;
 
     let service = server::SandboxServiceImpl::new(pool_manager.clone()).await;
+    let last_rpc_ms = service.last_rpc_ms.clone();
     let svc = proto::sandbox_service_server::SandboxServiceServer::new(service);
 
     // Write daemon.json
@@ -70,6 +80,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("cannot find home directory")
         .join(".roche");
     std::fs::create_dir_all(&roche_dir)?;
+
+    // Write seccomp trace profile if not present
+    let seccomp_path = roche_dir.join("seccomp-trace.json");
+    if !seccomp_path.exists() {
+        std::fs::write(&seccomp_path, SECCOMP_TRACE_PROFILE)?;
+    }
+
     let daemon_json = roche_dir.join("daemon.json");
     let info = serde_json::json!({
         "pid": std::process::id(),
@@ -78,6 +95,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::write(&daemon_json, serde_json::to_string_pretty(&info)?)?;
 
     tracing::info!("roche-daemon listening on {}", addr);
+
+    // Spawn idle timeout monitor
+    if args.idle_timeout > 0 {
+        let last_rpc = last_rpc_ms.clone();
+        let timeout_ms = args.idle_timeout * 1000;
+        let daemon_json_for_idle = daemon_json.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                let now_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64;
+                let last = last_rpc.load(Ordering::Relaxed);
+                if last > 0 && now_ms - last > timeout_ms {
+                    tracing::info!("idle timeout exceeded, shutting down");
+                    let _ = std::fs::remove_file(&daemon_json_for_idle);
+                    std::process::exit(0);
+                }
+            }
+        });
+    }
 
     // Spawn background GC
     let gc_handle = tokio::spawn(gc::run_gc_loop());

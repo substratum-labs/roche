@@ -48,7 +48,7 @@ class TestAsyncRoche:
         roche = AsyncRoche(transport=t)
         output = await roche.exec("sb-1", ["echo", "hi"])
         assert output.exit_code == 0
-        t.exec.assert_called_once_with("sb-1", ["echo", "hi"], "docker", None)
+        t.exec.assert_called_once_with("sb-1", ["echo", "hi"], "docker", None, trace_level=None)
 
     async def test_destroy(self):
         t = mock_transport()

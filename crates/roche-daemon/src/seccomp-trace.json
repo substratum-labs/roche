@@ -1,0 +1,17 @@
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "syscalls": [
+    {
+      "names": ["connect"],
+      "action": "SCMP_ACT_LOG"
+    },
+    {
+      "names": ["openat"],
+      "action": "SCMP_ACT_LOG"
+    },
+    {
+      "names": ["unlink", "unlinkat"],
+      "action": "SCMP_ACT_LOG"
+    }
+  ]
+}

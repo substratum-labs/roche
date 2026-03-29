@@ -192,6 +192,9 @@ impl PoolManager {
             mounts: vec![],
             kernel: None,
             rootfs: None,
+            trace_enabled: true,
+            network_allowlist: vec![],
+            fs_paths: vec![],
         };
 
         let create_result = match provider {

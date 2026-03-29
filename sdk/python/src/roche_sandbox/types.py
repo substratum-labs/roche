@@ -6,6 +6,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from roche_sandbox.trace import ExecutionTrace
+
 SandboxStatus = Literal["running", "paused", "stopped", "failed"]
 
 
@@ -29,6 +31,8 @@ class SandboxConfig:
     mounts: list[Mount] = field(default_factory=list)
     kernel: str | None = None
     rootfs: str | None = None
+    network_allowlist: list[str] = field(default_factory=list)
+    fs_paths: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -36,6 +40,7 @@ class ExecOutput:
     exit_code: int
     stdout: str
     stderr: str
+    trace: ExecutionTrace | None = None
 
 
 @dataclass

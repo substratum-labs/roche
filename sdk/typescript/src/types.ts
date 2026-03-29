@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Substratum Labs
 
+import type { ExecutionTrace } from "./trace";
+
 export type SandboxStatus = "running" | "paused" | "stopped" | "failed";
 
 export interface SandboxConfig {
@@ -15,6 +17,8 @@ export interface SandboxConfig {
   mounts?: Mount[];
   kernel?: string;
   rootfs?: string;
+  networkAllowlist?: string[];
+  fsPaths?: string[];
 }
 
 export interface Mount {
@@ -27,6 +31,7 @@ export interface ExecOutput {
   exitCode: number;
   stdout: string;
   stderr: string;
+  trace?: ExecutionTrace;
 }
 
 export interface SandboxInfo {

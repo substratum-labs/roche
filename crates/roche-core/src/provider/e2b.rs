@@ -399,6 +399,7 @@ impl E2bProvider {
             exit_code: exit_code.unwrap_or(-1),
             stdout,
             stderr,
+            trace: None,
         })
     }
 }
@@ -426,6 +427,8 @@ impl SandboxProvider for E2bProvider {
             unpause: true,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::Unsupported,
+            fs_paths: FieldSupport::Unsupported,
         }
     }
 
@@ -759,6 +762,8 @@ mod tests {
             unpause: true,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::Unsupported,
+            fs_paths: FieldSupport::Unsupported,
         };
         let config = SandboxConfig::default();
         let result = capabilities::validate_config(&config, &caps);
@@ -783,6 +788,8 @@ mod tests {
             unpause: true,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::Unsupported,
+            fs_paths: FieldSupport::Unsupported,
         };
         let config = SandboxConfig {
             writable: true,
@@ -808,6 +815,8 @@ mod tests {
             unpause: true,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::Unsupported,
+            fs_paths: FieldSupport::Unsupported,
         };
         let config = SandboxConfig {
             writable: true,
@@ -836,6 +845,8 @@ mod tests {
             unpause: true,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::Unsupported,
+            fs_paths: FieldSupport::Unsupported,
         };
         let config = SandboxConfig {
             writable: true,
@@ -864,6 +875,8 @@ mod tests {
             unpause: true,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::Unsupported,
+            fs_paths: FieldSupport::Unsupported,
         };
         let config = SandboxConfig {
             writable: true,

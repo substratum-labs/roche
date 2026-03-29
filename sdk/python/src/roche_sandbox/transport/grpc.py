@@ -7,10 +7,28 @@ from roche_sandbox.errors import (
     ProviderUnavailable, RocheError, SandboxNotFound, SandboxPaused,
     TimeoutError, UnsupportedOperation,
 )
+from roche_sandbox.trace import (
+    BlockedOperation, ExecutionTrace, FileAccess, NetworkAttempt,
+    ResourceSnapshot, ResourceUsage, SyscallEvent,
+)
 from roche_sandbox.types import ExecOutput, SandboxConfig, SandboxInfo, SandboxStatus
 
 _PROTO_STATUS_MAP: dict[int, SandboxStatus] = {
     1: "running", 2: "paused", 3: "stopped", 4: "failed",
+}
+
+_TRACE_LEVEL_MAP: dict[str, int] = {
+    "off": 0,       # TRACE_LEVEL_OFF
+    "summary": 1,   # TRACE_LEVEL_SUMMARY
+    "standard": 2,  # TRACE_LEVEL_STANDARD
+    "full": 3,      # TRACE_LEVEL_FULL
+}
+
+_FILE_OP_MAP: dict[int, str] = {
+    0: "read",    # FILE_OP_READ
+    1: "write",   # FILE_OP_WRITE
+    2: "create",  # FILE_OP_CREATE
+    3: "delete",  # FILE_OP_DELETE
 }
 
 _GRPC_CODE_MAP = {
@@ -51,22 +69,63 @@ class GrpcTransport:
             request.kernel = config.kernel
         if config.rootfs:
             request.rootfs = config.rootfs
+        if config.network_allowlist:
+            request.network_allowlist.extend(config.network_allowlist)
+        if config.fs_paths:
+            request.fs_paths.extend(config.fs_paths)
         try:
             response = await self._get_stub().Create(request)
         except Exception as e:
             raise self._map_grpc_error(e)
         return response.sandbox_id
 
-    async def exec(self, sandbox_id: str, command: list[str], provider: str, timeout_secs: int | None = None) -> ExecOutput:
+    async def exec(self, sandbox_id: str, command: list[str], provider: str, timeout_secs: int | None = None, trace_level: str | None = None, idempotency_key: str | None = None) -> ExecOutput:
         from roche_sandbox.generated.roche.v1 import sandbox_pb2
         request = sandbox_pb2.ExecRequest(sandbox_id=sandbox_id, command=command, provider=provider)
         if timeout_secs is not None:
             request.timeout_secs = timeout_secs
+        if trace_level is not None:
+            request.trace_level = _TRACE_LEVEL_MAP.get(trace_level, 0)
+        if idempotency_key is not None:
+            request.idempotency_key = idempotency_key
         try:
             response = await self._get_stub().Exec(request)
         except Exception as e:
             raise self._map_grpc_error(e)
-        return ExecOutput(exit_code=response.exit_code, stdout=response.stdout, stderr=response.stderr)
+        trace = None
+        if response.HasField("trace"):
+            rt = response.trace
+            ru = rt.resource_usage
+            trace = ExecutionTrace(
+                duration_secs=rt.duration_secs,
+                resource_usage=ResourceUsage(
+                    peak_memory_bytes=ru.peak_memory_bytes,
+                    cpu_time_secs=ru.cpu_time_secs,
+                    network_rx_bytes=ru.network_rx_bytes,
+                    network_tx_bytes=ru.network_tx_bytes,
+                ),
+                file_accesses=[
+                    FileAccess(path=f.path, op=_FILE_OP_MAP.get(f.op, "read"), size_bytes=f.size_bytes or None)
+                    for f in rt.file_accesses
+                ],
+                network_attempts=[
+                    NetworkAttempt(address=n.address, protocol=n.protocol, allowed=n.allowed)
+                    for n in rt.network_attempts
+                ],
+                blocked_ops=[
+                    BlockedOperation(op_type=b.op_type, detail=b.detail)
+                    for b in rt.blocked_ops
+                ],
+                syscalls=[
+                    SyscallEvent(name=s.name, args=list(s.args), result=s.result, timestamp_ms=s.timestamp_ms)
+                    for s in rt.syscalls
+                ],
+                resource_timeline=[
+                    ResourceSnapshot(timestamp_ms=r.timestamp_ms, memory_bytes=r.memory_bytes, cpu_percent=r.cpu_percent)
+                    for r in rt.resource_timeline
+                ],
+            )
+        return ExecOutput(exit_code=response.exit_code, stdout=response.stdout, stderr=response.stderr, trace=trace)
 
     async def destroy(self, sandbox_ids: list[str], provider: str, all: bool = False) -> list[str]:
         from roche_sandbox.generated.roche.v1 import sandbox_pb2
