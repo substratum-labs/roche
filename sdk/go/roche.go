@@ -118,8 +118,13 @@ func (c *Client) CreateID(ctx context.Context, cfg SandboxConfig) (string, error
 }
 
 // Exec runs a command in the specified sandbox.
-func (c *Client) Exec(ctx context.Context, sandboxID string, command []string) (*ExecOutput, error) {
-	return c.transport.Exec(ctx, sandboxID, command, c.provider, nil)
+// Pass an optional ExecOptions to control timeout, trace level, and idempotency.
+func (c *Client) Exec(ctx context.Context, sandboxID string, command []string, opts ...*ExecOptions) (*ExecOutput, error) {
+	var o *ExecOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	return c.transport.Exec(ctx, sandboxID, command, c.provider, o)
 }
 
 // Destroy removes a single sandbox by ID.

@@ -36,6 +36,7 @@ type ExecOutput struct {
 	ExitCode int32
 	Stdout   string
 	Stderr   string
+	Trace    *ExecutionTrace
 }
 
 // SandboxStatus represents the runtime status of a sandbox.

@@ -24,8 +24,13 @@ func (s *Sandbox) Provider() string {
 }
 
 // Exec runs a command inside the sandbox.
-func (s *Sandbox) Exec(ctx context.Context, command []string) (*ExecOutput, error) {
-	return s.transport.Exec(ctx, s.id, command, s.provider, nil)
+// Pass an optional ExecOptions to control timeout, trace level, and idempotency.
+func (s *Sandbox) Exec(ctx context.Context, command []string, opts ...*ExecOptions) (*ExecOutput, error) {
+	var o *ExecOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	return s.transport.Exec(ctx, s.id, command, s.provider, o)
 }
 
 // Pause freezes the sandbox.

@@ -161,13 +161,15 @@ func (c *CLITransport) buildCreateArgs(cfg SandboxConfig, provider string) []str
 	return args
 }
 
-func (c *CLITransport) buildExecArgs(sandboxID string, command []string, provider string, timeoutSecs *uint64) []string {
+func (c *CLITransport) buildExecArgs(sandboxID string, command []string, provider string, opts *ExecOptions) []string {
 	args := []string{"exec",
 		"--sandbox", sandboxID,
 		"--provider", provider,
 	}
-	if timeoutSecs != nil {
-		args = append(args, "--timeout", strconv.FormatUint(*timeoutSecs, 10))
+	if opts != nil {
+		if opts.TimeoutSecs != nil {
+			args = append(args, "--timeout", strconv.FormatUint(*opts.TimeoutSecs, 10))
+		}
 	}
 	args = append(args, "--")
 	args = append(args, command...)
@@ -207,8 +209,8 @@ func (c *CLITransport) Create(ctx context.Context, cfg SandboxConfig, provider s
 	return strings.TrimSpace(out), nil
 }
 
-func (c *CLITransport) Exec(ctx context.Context, sandboxID string, command []string, provider string, timeoutSecs *uint64) (*ExecOutput, error) {
-	args := c.buildExecArgs(sandboxID, command, provider, timeoutSecs)
+func (c *CLITransport) Exec(ctx context.Context, sandboxID string, command []string, provider string, opts *ExecOptions) (*ExecOutput, error) {
+	args := c.buildExecArgs(sandboxID, command, provider, opts)
 	stdout, stderr, exitCode, err := c.runUnchecked(ctx, args...)
 	if err != nil {
 		return nil, err

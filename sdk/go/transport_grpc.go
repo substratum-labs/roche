@@ -91,30 +91,128 @@ func (g *grpcTransport) Create(ctx context.Context, cfg SandboxConfig, provider 
 	return resp.GetSandboxId(), nil
 }
 
-func (g *grpcTransport) Exec(ctx context.Context, sandboxID string, command []string, provider string, timeoutSecs *uint64) (*ExecOutput, error) {
+func (g *grpcTransport) Exec(ctx context.Context, sandboxID string, command []string, provider string, opts *ExecOptions) (*ExecOutput, error) {
 	client, err := g.getClient()
 	if err != nil {
 		return nil, err
 	}
 
 	req := &pb.ExecRequest{
-		SandboxId:   sandboxID,
-		Command:     command,
-		Provider:    provider,
+		SandboxId: sandboxID,
+		Command:   command,
+		Provider:  provider,
 	}
-	if timeoutSecs != nil {
-		req.TimeoutSecs = timeoutSecs
+	if opts != nil {
+		if opts.TimeoutSecs != nil {
+			req.TimeoutSecs = opts.TimeoutSecs
+		}
+		if opts.TraceLevel != "" && opts.TraceLevel != TraceLevelOff {
+			req.TraceLevel = traceLevelToProto(opts.TraceLevel)
+		}
+		if opts.IdempotencyKey != "" {
+			req.IdempotencyKey = &opts.IdempotencyKey
+		}
 	}
 
 	resp, err := client.Exec(ctx, req)
 	if err != nil {
 		return nil, mapGRPCError(err)
 	}
-	return &ExecOutput{
+
+	out := &ExecOutput{
 		ExitCode: resp.GetExitCode(),
 		Stdout:   resp.GetStdout(),
 		Stderr:   resp.GetStderr(),
-	}, nil
+	}
+	if resp.GetTrace() != nil {
+		out.Trace = protoToExecutionTrace(resp.GetTrace())
+	}
+	return out, nil
+}
+
+func traceLevelToProto(level TraceLevel) pb.TraceLevel {
+	switch level {
+	case TraceLevelSummary:
+		return pb.TraceLevel_TRACE_LEVEL_SUMMARY
+	case TraceLevelStandard:
+		return pb.TraceLevel_TRACE_LEVEL_STANDARD
+	case TraceLevelFull:
+		return pb.TraceLevel_TRACE_LEVEL_FULL
+	default:
+		return pb.TraceLevel_TRACE_LEVEL_OFF
+	}
+}
+
+func protoToExecutionTrace(pt *pb.ExecutionTrace) *ExecutionTrace {
+	if pt == nil {
+		return nil
+	}
+	t := &ExecutionTrace{
+		DurationSecs: pt.GetDurationSecs(),
+	}
+	if ru := pt.GetResourceUsage(); ru != nil {
+		t.ResourceUsage = ResourceUsage{
+			PeakMemoryBytes: ru.GetPeakMemoryBytes(),
+			CPUTimeSecs:     ru.GetCpuTimeSecs(),
+			NetworkRxBytes:  ru.GetNetworkRxBytes(),
+			NetworkTxBytes:  ru.GetNetworkTxBytes(),
+		}
+	}
+	for _, f := range pt.GetFileAccesses() {
+		fa := FileAccess{
+			Path: f.GetPath(),
+			Op:   fileOpToString(f.GetOp()),
+		}
+		if f.SizeBytes != nil {
+			sb := f.GetSizeBytes()
+			fa.SizeBytes = &sb
+		}
+		t.FileAccesses = append(t.FileAccesses, fa)
+	}
+	for _, n := range pt.GetNetworkAttempts() {
+		t.NetworkAttempts = append(t.NetworkAttempts, NetworkAttempt{
+			Address:  n.GetAddress(),
+			Protocol: n.GetProtocol(),
+			Allowed:  n.GetAllowed(),
+		})
+	}
+	for _, b := range pt.GetBlockedOps() {
+		t.BlockedOps = append(t.BlockedOps, BlockedOperation{
+			OpType: b.GetOpType(),
+			Detail: b.GetDetail(),
+		})
+	}
+	for _, s := range pt.GetSyscalls() {
+		t.Syscalls = append(t.Syscalls, SyscallEvent{
+			Name:        s.GetName(),
+			Args:        s.GetArgs(),
+			Result:      s.GetResult(),
+			TimestampMs: s.GetTimestampMs(),
+		})
+	}
+	for _, r := range pt.GetResourceTimeline() {
+		t.ResourceTimeline = append(t.ResourceTimeline, ResourceSnapshot{
+			TimestampMs: r.GetTimestampMs(),
+			MemoryBytes: r.GetMemoryBytes(),
+			CPUPercent:  r.GetCpuPercent(),
+		})
+	}
+	return t
+}
+
+func fileOpToString(op pb.FileOp) string {
+	switch op {
+	case pb.FileOp_FILE_OP_READ:
+		return "read"
+	case pb.FileOp_FILE_OP_WRITE:
+		return "write"
+	case pb.FileOp_FILE_OP_CREATE:
+		return "create"
+	case pb.FileOp_FILE_OP_DELETE:
+		return "delete"
+	default:
+		return "read"
+	}
 }
 
 func (g *grpcTransport) Destroy(ctx context.Context, sandboxIDs []string, provider string, all bool) ([]string, error) {

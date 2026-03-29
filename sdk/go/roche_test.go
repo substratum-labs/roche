@@ -11,7 +11,7 @@ import (
 // mockTransport is a configurable mock implementing Transport for tests.
 type mockTransport struct {
 	createFn     func(ctx context.Context, cfg SandboxConfig, provider string) (string, error)
-	execFn       func(ctx context.Context, sandboxID string, command []string, provider string, timeoutSecs *uint64) (*ExecOutput, error)
+	execFn       func(ctx context.Context, sandboxID string, command []string, provider string, opts *ExecOptions) (*ExecOutput, error)
 	destroyFn    func(ctx context.Context, sandboxIDs []string, provider string, all bool) ([]string, error)
 	listFn       func(ctx context.Context, provider string) ([]SandboxInfo, error)
 	pauseFn      func(ctx context.Context, sandboxID, provider string) error
@@ -32,9 +32,9 @@ func (m *mockTransport) Create(ctx context.Context, cfg SandboxConfig, provider 
 	return "", nil
 }
 
-func (m *mockTransport) Exec(ctx context.Context, sandboxID string, command []string, provider string, timeoutSecs *uint64) (*ExecOutput, error) {
+func (m *mockTransport) Exec(ctx context.Context, sandboxID string, command []string, provider string, opts *ExecOptions) (*ExecOutput, error) {
 	if m.execFn != nil {
-		return m.execFn(ctx, sandboxID, command, provider, timeoutSecs)
+		return m.execFn(ctx, sandboxID, command, provider, opts)
 	}
 	return &ExecOutput{}, nil
 }
@@ -173,7 +173,7 @@ func TestClientCreate(t *testing.T) {
 func TestClientExec(t *testing.T) {
 	expected := &ExecOutput{ExitCode: 0, Stdout: "hello", Stderr: ""}
 	mt := &mockTransport{
-		execFn: func(_ context.Context, _ string, _ []string, _ string, _ *uint64) (*ExecOutput, error) {
+		execFn: func(_ context.Context, _ string, _ []string, _ string, _ *ExecOptions) (*ExecOutput, error) {
 			return expected, nil
 		},
 	}
@@ -271,6 +271,53 @@ func TestClientGC(t *testing.T) {
 	}
 	if len(ids) != 1 || ids[0] != "sb-old" {
 		t.Fatalf("expected [sb-old], got %v", ids)
+	}
+}
+
+func TestClientExecWithIdempotencyKey(t *testing.T) {
+	var gotOpts *ExecOptions
+	mt := &mockTransport{
+		execFn: func(_ context.Context, _ string, _ []string, _ string, opts *ExecOptions) (*ExecOutput, error) {
+			gotOpts = opts
+			return &ExecOutput{ExitCode: 0, Stdout: "cached"}, nil
+		},
+	}
+	client, _ := New(WithTransport(mt))
+
+	out, err := client.Exec(context.Background(), "sb-1", []string{"echo", "hi"}, &ExecOptions{
+		IdempotencyKey: "key-abc",
+		TraceLevel:     TraceLevelFull,
+	})
+	if err != nil {
+		t.Fatalf("Exec() error: %v", err)
+	}
+	if out.Stdout != "cached" {
+		t.Fatalf("expected stdout 'cached', got %q", out.Stdout)
+	}
+	if gotOpts == nil {
+		t.Fatal("expected opts to be passed through")
+	}
+	if gotOpts.IdempotencyKey != "key-abc" {
+		t.Fatalf("expected idempotency key 'key-abc', got %q", gotOpts.IdempotencyKey)
+	}
+	if gotOpts.TraceLevel != TraceLevelFull {
+		t.Fatalf("expected trace level 'full', got %q", gotOpts.TraceLevel)
+	}
+}
+
+func TestTraceSummary(t *testing.T) {
+	trace := &ExecutionTrace{
+		DurationSecs: 1.234,
+		ResourceUsage: ResourceUsage{
+			PeakMemoryBytes: 1024 * 1024,
+			CPUTimeSecs:     0.5,
+		},
+		FileAccesses:    []FileAccess{{Path: "/tmp/f", Op: "read"}},
+		NetworkAttempts: []NetworkAttempt{{Address: "1.1.1.1", Allowed: false}},
+	}
+	s := trace.Summary()
+	if s == "" || s == "no trace" {
+		t.Fatalf("expected non-empty summary, got %q", s)
 	}
 }
 
