@@ -12,6 +12,7 @@ export interface Transport {
     provider: string,
     timeoutSecs?: number,
     traceLevel?: TraceLevel,
+    idempotencyKey?: string,
   ): Promise<ExecOutput>;
   destroy(
     sandboxIds: string[],

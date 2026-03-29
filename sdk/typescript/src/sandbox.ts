@@ -12,8 +12,8 @@ export class Sandbox {
     private readonly transport: Transport,
   ) {}
 
-  async exec(command: string[], timeoutSecs?: number, traceLevel?: TraceLevel): Promise<ExecOutput> {
-    return this.transport.exec(this.id, command, this.provider, timeoutSecs, traceLevel);
+  async exec(command: string[], timeoutSecs?: number, traceLevel?: TraceLevel, idempotencyKey?: string): Promise<ExecOutput> {
+    return this.transport.exec(this.id, command, this.provider, timeoutSecs, traceLevel, idempotencyKey);
   }
 
   async pause(): Promise<void> { await this.transport.pause(this.id, this.provider); }

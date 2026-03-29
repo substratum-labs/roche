@@ -55,6 +55,7 @@ export class CliTransport implements Transport {
     provider: string,
     timeoutSecs?: number,
     traceLevel?: TraceLevel,
+    idempotencyKey?: string,
   ): Promise<ExecOutput> {
     const args = ["exec", "--sandbox", sandboxId];
     if (timeoutSecs != null) args.push("--timeout", String(timeoutSecs));

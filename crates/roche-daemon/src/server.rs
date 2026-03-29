@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Substratum Labs
 
+use crate::idempotency::IdempotencyCache;
 use crate::pool::PoolManager;
 use crate::proto;
 use roche_core::provider::docker::DockerProvider;
@@ -28,6 +29,7 @@ pub struct SandboxServiceImpl {
     pub last_rpc_ms: Arc<AtomicU64>,
     docker_sensor: SensorDispatch,
     none_sensor: SensorDispatch,
+    idempotency_cache: IdempotencyCache,
 }
 
 impl SandboxServiceImpl {
@@ -48,6 +50,7 @@ impl SandboxServiceImpl {
             )),
             docker_sensor: SensorDispatch::Docker(DockerSensor),
             none_sensor: SensorDispatch::None,
+            idempotency_cache: IdempotencyCache::new(),
         }
     }
 
@@ -270,9 +273,19 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
     ) -> Result<Response<proto::ExecResponse>, Status> {
         self.touch_last_rpc();
         let req = request.into_inner();
+
+        // Check idempotency cache
+        let idempotency_key = req.idempotency_key.clone();
+        if let Some(ref key) = idempotency_key {
+            if let Some(cached) = self.idempotency_cache.get(key) {
+                return Ok(Response::new(cached));
+            }
+        }
+
         let exec_req = types::ExecRequest {
             command: req.command,
             timeout_secs: req.timeout_secs,
+            idempotency_key: idempotency_key.clone(),
         };
         let provider_name = default_provider(&req.provider);
         let trace_level = TraceLevel::from_proto(req.trace_level);
@@ -297,12 +310,19 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
                         None
                     };
 
-                    Ok(Response::new(proto::ExecResponse {
+                    let response = proto::ExecResponse {
                         exit_code: output.exit_code,
                         stdout: output.stdout,
                         stderr: output.stderr,
                         trace,
-                    }))
+                    };
+
+                    // Cache response for idempotent requests
+                    if let Some(key) = idempotency_key {
+                        self.idempotency_cache.put(key, response.clone());
+                    }
+
+                    Ok(Response::new(response))
                 }
                 Err(e) => {
                     // Abort trace collection on error

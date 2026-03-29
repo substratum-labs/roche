@@ -121,6 +121,9 @@ pub struct SandboxInfo {
 pub struct ExecRequest {
     pub command: Vec<String>,
     pub timeout_secs: Option<u64>,
+    /// Optional idempotency key. If set, duplicate execs with the same key
+    /// return the cached result instead of re-executing.
+    pub idempotency_key: Option<String>,
 }
 
 /// Output from executing a command.

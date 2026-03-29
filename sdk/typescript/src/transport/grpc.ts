@@ -80,10 +80,14 @@ export class GrpcTransport implements Transport {
     provider: string,
     timeoutSecs?: number,
     traceLevel?: TraceLevel,
+    idempotencyKey?: string,
   ): Promise<ExecOutput> {
     const request: any = { sandboxId, command, provider, timeoutSecs };
     if (traceLevel !== undefined) {
       request.traceLevel = TRACE_LEVEL_MAP[traceLevel];
+    }
+    if (idempotencyKey !== undefined) {
+      request.idempotencyKey = idempotencyKey;
     }
     const response = await this.call("exec", request);
     return {

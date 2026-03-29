@@ -47,7 +47,7 @@ class CliTransport:
         stdout, _ = await self._run(args)
         return stdout.strip()
 
-    async def exec(self, sandbox_id: str, command: list[str], provider: str, timeout_secs: int | None = None, trace_level: str | None = None) -> ExecOutput:
+    async def exec(self, sandbox_id: str, command: list[str], provider: str, timeout_secs: int | None = None, trace_level: str | None = None, idempotency_key: str | None = None) -> ExecOutput:
         args = ["exec", "--sandbox", sandbox_id]
         if timeout_secs is not None:
             args.extend(["--timeout", str(timeout_secs)])

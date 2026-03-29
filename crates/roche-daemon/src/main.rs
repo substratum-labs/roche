@@ -12,6 +12,7 @@ pub mod proto {
 }
 
 mod gc;
+mod idempotency;
 mod pool;
 mod server;
 

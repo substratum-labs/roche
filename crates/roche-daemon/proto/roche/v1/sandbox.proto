@@ -50,6 +50,7 @@ message ExecRequest {
   optional uint64 timeout_secs = 3;
   string provider = 4;
   TraceLevel trace_level = 5;
+  optional string idempotency_key = 6; // If set, duplicate execs with the same key return cached result
 }
 
 // Output from a sandboxed command execution.

@@ -75,13 +75,15 @@ class GrpcTransport:
             raise self._map_grpc_error(e)
         return response.sandbox_id
 
-    async def exec(self, sandbox_id: str, command: list[str], provider: str, timeout_secs: int | None = None, trace_level: str | None = None) -> ExecOutput:
+    async def exec(self, sandbox_id: str, command: list[str], provider: str, timeout_secs: int | None = None, trace_level: str | None = None, idempotency_key: str | None = None) -> ExecOutput:
         from roche_sandbox.generated.roche.v1 import sandbox_pb2
         request = sandbox_pb2.ExecRequest(sandbox_id=sandbox_id, command=command, provider=provider)
         if timeout_secs is not None:
             request.timeout_secs = timeout_secs
         if trace_level is not None:
             request.trace_level = _TRACE_LEVEL_MAP.get(trace_level, 0)
+        if idempotency_key is not None:
+            request.idempotency_key = idempotency_key
         try:
             response = await self._get_stub().Exec(request)
         except Exception as e:
