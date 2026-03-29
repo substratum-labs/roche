@@ -44,6 +44,10 @@ class CliTransport:
             args.extend(["--kernel", config.kernel])
         if config.rootfs:
             args.extend(["--rootfs", config.rootfs])
+        for host in config.network_allowlist:
+            args.extend(["--network-allow", host])
+        for path in config.fs_paths:
+            args.extend(["--fs-path", path])
         stdout, _ = await self._run(args)
         return stdout.strip()
 

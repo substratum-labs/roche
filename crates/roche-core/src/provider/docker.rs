@@ -52,8 +52,17 @@ fn build_create_args(config: &SandboxConfig) -> Vec<String> {
         args.extend(["--network".into(), "none".into()]);
     }
 
-    // Filesystem isolation (default: read-only)
-    if !config.writable {
+    // Filesystem isolation
+    if !config.fs_paths.is_empty() {
+        // FS path whitelist: read-only root + writable tmpfs at each path
+        args.push("--read-only".into());
+        for path in &config.fs_paths {
+            let clean = path.trim_end_matches('*').trim_end_matches('/');
+            if !clean.is_empty() {
+                args.extend(["--tmpfs".into(), format!("{clean}:rw")]);
+            }
+        }
+    } else if !config.writable {
         args.push("--read-only".into());
     }
 
@@ -154,6 +163,8 @@ impl SandboxProvider for DockerProvider {
             unpause: false,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::Supported,
+            fs_paths: FieldSupport::Supported,
         }
     }
 
@@ -189,6 +200,33 @@ impl SandboxProvider for DockerProvider {
         if !start.status.success() {
             let stderr = String::from_utf8_lossy(&start.stderr);
             return Err(ProviderError::CreateFailed(stderr.trim().to_string()));
+        }
+
+        // Apply network allowlist via iptables if configured
+        if config.network && !config.network_allowlist.is_empty() {
+            let mut rules = vec![
+                "iptables -P OUTPUT DROP".to_string(),
+                "iptables -A OUTPUT -o lo -j ACCEPT".to_string(),
+                "iptables -A OUTPUT -p udp --dport 53 -j ACCEPT".to_string(),
+                "iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT".to_string(),
+            ];
+            for host in &config.network_allowlist {
+                rules.push(format!("iptables -A OUTPUT -d {host} -j ACCEPT"));
+            }
+            let script = rules.join(" && ");
+            let result = Command::new("docker")
+                .args(["exec", &container_id, "sh", "-c", &script])
+                .output()
+                .await;
+            if let Ok(out) = result {
+                if !out.status.success() {
+                    // Non-fatal: container may lack iptables. The allowlist is best-effort.
+                    eprintln!(
+                        "roche: network allowlist enforcement failed (container may lack iptables): {}",
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    );
+                }
+            }
         }
 
         Ok(container_id)

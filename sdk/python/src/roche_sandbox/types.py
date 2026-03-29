@@ -31,6 +31,8 @@ class SandboxConfig:
     mounts: list[Mount] = field(default_factory=list)
     kernel: str | None = None
     rootfs: str | None = None
+    network_allowlist: list[str] = field(default_factory=list)
+    fs_paths: list[str] = field(default_factory=list)
 
 
 @dataclass

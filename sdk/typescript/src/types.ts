@@ -17,6 +17,8 @@ export interface SandboxConfig {
   mounts?: Mount[];
   kernel?: string;
   rootfs?: string;
+  networkAllowlist?: string[];
+  fsPaths?: string[];
 }
 
 export interface Mount {

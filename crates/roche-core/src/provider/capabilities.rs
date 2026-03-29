@@ -44,6 +44,10 @@ pub struct ProviderCapabilities {
     pub kernel: FieldSupport,
     /// Whether rootfs path is supported/required.
     pub rootfs: FieldSupport,
+    /// Whether network allowlist is supported.
+    pub network_allowlist: FieldSupport,
+    /// Whether filesystem path whitelist is supported.
+    pub fs_paths: FieldSupport,
 
     // --- Operational capabilities ---
     pub pause: bool,
@@ -105,6 +109,22 @@ pub fn validate_config(
         violations.push(format!("{} requires --rootfs path", caps.name));
     }
 
+    // network_allowlist
+    if !config.network_allowlist.is_empty() && caps.network_allowlist == FieldSupport::Unsupported {
+        violations.push(format!(
+            "{} does not support network allowlist",
+            caps.name
+        ));
+    }
+
+    // fs_paths
+    if !config.fs_paths.is_empty() && caps.fs_paths == FieldSupport::Unsupported {
+        violations.push(format!(
+            "{} does not support filesystem path whitelist",
+            caps.name
+        ));
+    }
+
     if violations.is_empty() {
         Ok(())
     } else {
@@ -132,6 +152,8 @@ mod tests {
             unpause: true,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::Supported,
+            fs_paths: FieldSupport::Supported,
         }
     }
 
@@ -150,6 +172,8 @@ mod tests {
             unpause: true,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::Unsupported,
+            fs_paths: FieldSupport::Unsupported,
         }
     }
 
@@ -168,6 +192,8 @@ mod tests {
             unpause: true,
             copy_to: false,
             copy_from: false,
+            network_allowlist: FieldSupport::NotApplicable,
+            fs_paths: FieldSupport::NotApplicable,
         }
     }
 
@@ -186,6 +212,8 @@ mod tests {
             unpause: false,
             copy_to: true,
             copy_from: true,
+            network_allowlist: FieldSupport::NotApplicable,
+            fs_paths: FieldSupport::NotApplicable,
         }
     }
 
@@ -204,6 +232,8 @@ mod tests {
             unpause: false,
             copy_to: false,
             copy_from: false,
+            network_allowlist: FieldSupport::NotApplicable,
+            fs_paths: FieldSupport::NotApplicable,
         }
     }
 

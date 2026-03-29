@@ -54,6 +54,17 @@ pub struct SandboxConfig {
     /// Enable execution tracing. Default: true.
     #[serde(default = "default_true")]
     pub trace_enabled: bool,
+
+    /// Network allowlist: when `network` is true, restrict to these hosts.
+    /// Empty = unrestricted. E.g., ["api.openai.com", "cdn.example.com"]
+    #[serde(default)]
+    pub network_allowlist: Vec<String>,
+
+    /// Filesystem path whitelist: writable paths when filesystem is otherwise read-only.
+    /// Empty = default behavior (writable flag controls everything).
+    /// E.g., ["/data", "/tmp"]
+    #[serde(default)]
+    pub fs_paths: Vec<String>,
 }
 
 /// Configuration for a volume mount.
@@ -92,6 +103,8 @@ impl Default for SandboxConfig {
             kernel: None,
             rootfs: None,
             trace_enabled: true,
+            network_allowlist: Vec::new(),
+            fs_paths: Vec::new(),
         }
     }
 }

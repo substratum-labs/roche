@@ -44,6 +44,16 @@ export class CliTransport implements Transport {
     }
     if (config.kernel) args.push("--kernel", config.kernel);
     if (config.rootfs) args.push("--rootfs", config.rootfs);
+    if (config.networkAllowlist) {
+      for (const host of config.networkAllowlist) {
+        args.push("--network-allow", host);
+      }
+    }
+    if (config.fsPaths) {
+      for (const path of config.fsPaths) {
+        args.push("--fs-path", path);
+      }
+    }
 
     const { stdout } = await this.run(args);
     return stdout.trim();

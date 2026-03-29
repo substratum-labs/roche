@@ -158,6 +158,12 @@ func (c *CLITransport) buildCreateArgs(cfg SandboxConfig, provider string) []str
 		}
 		args = append(args, "--mount", m.HostPath+":"+m.ContainerPath+":"+mode)
 	}
+	for _, host := range cfg.NetworkAllowlist {
+		args = append(args, "--network-allow", host)
+	}
+	for _, path := range cfg.FSPaths {
+		args = append(args, "--fs-path", path)
+	}
 	return args
 }
 

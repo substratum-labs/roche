@@ -37,6 +37,8 @@ message CreateRequest {
   repeated MountConfig mounts = 9; // Host directory mounts
   optional string kernel = 10;   // Firecracker only: path to Linux kernel
   optional string rootfs = 11;   // Firecracker only: path to ext4 rootfs
+  repeated string network_allowlist = 12; // Hosts allowed when network=true (empty = unrestricted)
+  repeated string fs_paths = 13;          // Writable filesystem paths (empty = default behavior)
 }
 
 message CreateResponse {

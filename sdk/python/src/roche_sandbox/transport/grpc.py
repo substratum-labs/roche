@@ -69,6 +69,10 @@ class GrpcTransport:
             request.kernel = config.kernel
         if config.rootfs:
             request.rootfs = config.rootfs
+        if config.network_allowlist:
+            request.network_allowlist.extend(config.network_allowlist)
+        if config.fs_paths:
+            request.fs_paths.extend(config.fs_paths)
         try:
             response = await self._get_stub().Create(request)
         except Exception as e:

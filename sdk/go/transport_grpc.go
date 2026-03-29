@@ -83,6 +83,8 @@ func (g *grpcTransport) Create(ctx context.Context, cfg SandboxConfig, provider 
 			Readonly:      m.Readonly,
 		})
 	}
+	req.NetworkAllowlist = cfg.NetworkAllowlist
+	req.FsPaths = cfg.FSPaths
 
 	resp, err := client.Create(ctx, req)
 	if err != nil {

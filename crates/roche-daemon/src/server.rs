@@ -252,6 +252,8 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
             kernel: req.kernel,
             rootfs: req.rootfs,
             trace_enabled: true,
+            network_allowlist: req.network_allowlist,
+            fs_paths: req.fs_paths,
         };
 
         // Try pool first

@@ -15,8 +15,10 @@ type SandboxConfig struct {
 	Writable    bool
 	Env         map[string]string
 	Mounts      []Mount
-	Kernel      string
-	Rootfs      string
+	Kernel           string
+	Rootfs           string
+	NetworkAllowlist []string
+	FSPaths          []string
 }
 
 // Mount represents a host directory mount into the sandbox.

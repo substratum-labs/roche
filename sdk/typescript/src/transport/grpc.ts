@@ -69,6 +69,8 @@ export class GrpcTransport implements Transport {
       })),
       kernel: config.kernel,
       rootfs: config.rootfs,
+      networkAllowlist: config.networkAllowlist ?? [],
+      fsPaths: config.fsPaths ?? [],
     };
     const response = await this.call("create", request);
     return response.sandboxId;
