@@ -126,13 +126,27 @@ impl K8sProvider {
 }
 
 impl SandboxProvider for K8sProvider {
-    async fn create(&self, config: &SandboxConfig) -> Result<SandboxId, ProviderError> {
-        // Reject volume mounts — not supported for k8s provider
-        if !config.mounts.is_empty() {
-            return Err(ProviderError::Unsupported(
-                "volume mounts are not supported by the k8s provider".to_string(),
-            ));
+    fn capabilities(&self) -> crate::provider::capabilities::ProviderCapabilities {
+        use crate::provider::capabilities::{FieldSupport, ProviderCapabilities};
+        ProviderCapabilities {
+            name: "k8s".into(),
+            writable_true: FieldSupport::Supported,
+            writable_false: FieldSupport::Supported,
+            network: FieldSupport::Supported,
+            mounts: FieldSupport::Unsupported,
+            memory: FieldSupport::Supported,
+            cpus: FieldSupport::Supported,
+            kernel: FieldSupport::NotApplicable,
+            rootfs: FieldSupport::NotApplicable,
+            pause: false,
+            unpause: false,
+            copy_to: true,
+            copy_from: true,
         }
+    }
+
+    async fn create(&self, config: &SandboxConfig) -> Result<SandboxId, ProviderError> {
+        crate::provider::capabilities::validate_config(config, &self.capabilities())?;
 
         let pod_name = format!("roche-{}", uuid::Uuid::new_v4());
         let pod = build_pod(&pod_name, &self.namespace, config);

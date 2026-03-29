@@ -4,6 +4,7 @@
 pub mod provider;
 pub mod types;
 
+pub use provider::capabilities::{validate_config, FieldSupport, ProviderCapabilities};
 pub use provider::{SandboxFileOps, SandboxLifecycle, SandboxProvider};
 pub use types::{
     ExecOutput, ExecRequest, MountConfig, SandboxConfig, SandboxId, SandboxInfo, SandboxStatus,

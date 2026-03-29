@@ -190,32 +190,6 @@ impl E2bProvider {
         ))
     }
 
-    /// Validate that the requested config is compatible with E2B.
-    fn validate_config(config: &SandboxConfig) -> Result<(), ProviderError> {
-        if !config.writable {
-            return Err(ProviderError::Unsupported(
-                "E2B sandboxes do not support read-only filesystem".into(),
-            ));
-        }
-        if config.memory.is_some() {
-            return Err(ProviderError::Unsupported(
-                "E2B does not support custom memory limits (resource limits are set by template)"
-                    .into(),
-            ));
-        }
-        if config.cpus.is_some() {
-            return Err(ProviderError::Unsupported(
-                "E2B does not support custom CPU limits (resource limits are set by template)"
-                    .into(),
-            ));
-        }
-        if !config.mounts.is_empty() {
-            return Err(ProviderError::Unsupported(
-                "E2B does not support host volume mounts".into(),
-            ));
-        }
-        Ok(())
-    }
 
     /// Build the envd base URL for a given sandbox.
     fn envd_url(&self, sandbox_id: &str, domain: &str) -> String {
@@ -436,8 +410,27 @@ impl Default for E2bProvider {
 }
 
 impl SandboxProvider for E2bProvider {
+    fn capabilities(&self) -> crate::provider::capabilities::ProviderCapabilities {
+        use crate::provider::capabilities::{FieldSupport, ProviderCapabilities};
+        ProviderCapabilities {
+            name: "e2b".into(),
+            writable_true: FieldSupport::Supported,
+            writable_false: FieldSupport::Unsupported,
+            network: FieldSupport::Supported,
+            mounts: FieldSupport::Unsupported,
+            memory: FieldSupport::Unsupported,
+            cpus: FieldSupport::Unsupported,
+            kernel: FieldSupport::NotApplicable,
+            rootfs: FieldSupport::NotApplicable,
+            pause: true,
+            unpause: true,
+            copy_to: true,
+            copy_from: true,
+        }
+    }
+
     async fn create(&self, config: &SandboxConfig) -> Result<SandboxId, ProviderError> {
-        Self::validate_config(config)?;
+        crate::provider::capabilities::validate_config(config, &self.capabilities())?;
 
         let body = NewSandbox {
             template_id: config.image.clone(),
@@ -751,48 +744,127 @@ mod tests {
     #[test]
     fn test_validate_config_defaults_rejected() {
         // Default config has writable=false, which E2B doesn't support
+        use crate::provider::capabilities::{self, FieldSupport, ProviderCapabilities};
+        let caps = ProviderCapabilities {
+            name: "e2b".into(),
+            writable_true: FieldSupport::Supported,
+            writable_false: FieldSupport::Unsupported,
+            network: FieldSupport::Supported,
+            mounts: FieldSupport::Unsupported,
+            memory: FieldSupport::Unsupported,
+            cpus: FieldSupport::Unsupported,
+            kernel: FieldSupport::NotApplicable,
+            rootfs: FieldSupport::NotApplicable,
+            pause: true,
+            unpause: true,
+            copy_to: true,
+            copy_from: true,
+        };
         let config = SandboxConfig::default();
-        let result = E2bProvider::validate_config(&config);
+        let result = capabilities::validate_config(&config, &caps);
         assert!(result.is_err());
         assert!(matches!(result, Err(ProviderError::Unsupported(_))));
     }
 
     #[test]
     fn test_validate_config_writable_ok() {
+        use crate::provider::capabilities::{self, FieldSupport, ProviderCapabilities};
+        let caps = ProviderCapabilities {
+            name: "e2b".into(),
+            writable_true: FieldSupport::Supported,
+            writable_false: FieldSupport::Unsupported,
+            network: FieldSupport::Supported,
+            mounts: FieldSupport::Unsupported,
+            memory: FieldSupport::Unsupported,
+            cpus: FieldSupport::Unsupported,
+            kernel: FieldSupport::NotApplicable,
+            rootfs: FieldSupport::NotApplicable,
+            pause: true,
+            unpause: true,
+            copy_to: true,
+            copy_from: true,
+        };
         let config = SandboxConfig {
             writable: true,
             ..Default::default()
         };
-        let result = E2bProvider::validate_config(&config);
-        assert!(result.is_ok());
+        assert!(capabilities::validate_config(&config, &caps).is_ok());
     }
 
     #[test]
     fn test_validate_config_memory_rejected() {
+        use crate::provider::capabilities::{self, FieldSupport, ProviderCapabilities};
+        let caps = ProviderCapabilities {
+            name: "e2b".into(),
+            writable_true: FieldSupport::Supported,
+            writable_false: FieldSupport::Unsupported,
+            network: FieldSupport::Supported,
+            mounts: FieldSupport::Unsupported,
+            memory: FieldSupport::Unsupported,
+            cpus: FieldSupport::Unsupported,
+            kernel: FieldSupport::NotApplicable,
+            rootfs: FieldSupport::NotApplicable,
+            pause: true,
+            unpause: true,
+            copy_to: true,
+            copy_from: true,
+        };
         let config = SandboxConfig {
             writable: true,
             memory: Some("512m".into()),
             ..Default::default()
         };
-        let result = E2bProvider::validate_config(&config);
+        let result = capabilities::validate_config(&config, &caps);
         assert!(result.is_err());
         assert!(matches!(result, Err(ProviderError::Unsupported(_))));
     }
 
     #[test]
     fn test_validate_config_cpus_rejected() {
+        use crate::provider::capabilities::{self, FieldSupport, ProviderCapabilities};
+        let caps = ProviderCapabilities {
+            name: "e2b".into(),
+            writable_true: FieldSupport::Supported,
+            writable_false: FieldSupport::Unsupported,
+            network: FieldSupport::Supported,
+            mounts: FieldSupport::Unsupported,
+            memory: FieldSupport::Unsupported,
+            cpus: FieldSupport::Unsupported,
+            kernel: FieldSupport::NotApplicable,
+            rootfs: FieldSupport::NotApplicable,
+            pause: true,
+            unpause: true,
+            copy_to: true,
+            copy_from: true,
+        };
         let config = SandboxConfig {
             writable: true,
             cpus: Some(2.0),
             ..Default::default()
         };
-        let result = E2bProvider::validate_config(&config);
+        let result = capabilities::validate_config(&config, &caps);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_validate_config_mounts_rejected() {
+        use crate::provider::capabilities::{self, FieldSupport, ProviderCapabilities};
         use crate::types::MountConfig;
+        let caps = ProviderCapabilities {
+            name: "e2b".into(),
+            writable_true: FieldSupport::Supported,
+            writable_false: FieldSupport::Unsupported,
+            network: FieldSupport::Supported,
+            mounts: FieldSupport::Unsupported,
+            memory: FieldSupport::Unsupported,
+            cpus: FieldSupport::Unsupported,
+            kernel: FieldSupport::NotApplicable,
+            rootfs: FieldSupport::NotApplicable,
+            pause: true,
+            unpause: true,
+            copy_to: true,
+            copy_from: true,
+        };
         let config = SandboxConfig {
             writable: true,
             mounts: vec![MountConfig {
@@ -802,7 +874,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        let result = E2bProvider::validate_config(&config);
+        let result = capabilities::validate_config(&config, &caps);
         assert!(result.is_err());
     }
 

@@ -125,7 +125,27 @@ fn parse_status(state: &str) -> SandboxStatus {
 }
 
 impl SandboxProvider for DockerProvider {
+    fn capabilities(&self) -> crate::provider::capabilities::ProviderCapabilities {
+        use crate::provider::capabilities::{FieldSupport, ProviderCapabilities};
+        ProviderCapabilities {
+            name: "docker".into(),
+            writable_true: FieldSupport::Supported,
+            writable_false: FieldSupport::Supported,
+            network: FieldSupport::Supported,
+            mounts: FieldSupport::Supported,
+            memory: FieldSupport::Supported,
+            cpus: FieldSupport::Supported,
+            kernel: FieldSupport::NotApplicable,
+            rootfs: FieldSupport::NotApplicable,
+            pause: false,
+            unpause: false,
+            copy_to: true,
+            copy_from: true,
+        }
+    }
+
     async fn create(&self, config: &SandboxConfig) -> Result<SandboxId, ProviderError> {
+        crate::provider::capabilities::validate_config(config, &self.capabilities())?;
         Self::check_available().await?;
 
         let args = build_create_args(config);

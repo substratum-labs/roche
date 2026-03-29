@@ -131,8 +131,30 @@ impl Default for FirecrackerProvider {
 }
 
 impl SandboxProvider for FirecrackerProvider {
+    fn capabilities(&self) -> crate::provider::capabilities::ProviderCapabilities {
+        use crate::provider::capabilities::{FieldSupport, ProviderCapabilities};
+        ProviderCapabilities {
+            name: "firecracker".into(),
+            writable_true: FieldSupport::Supported,
+            writable_false: FieldSupport::Supported,
+            network: FieldSupport::Supported,
+            mounts: FieldSupport::NotApplicable,
+            memory: FieldSupport::Supported,
+            cpus: FieldSupport::Supported,
+            kernel: FieldSupport::Required,
+            rootfs: FieldSupport::Required,
+            pause: true,
+            unpause: true,
+            copy_to: false,
+            copy_from: false,
+        }
+    }
+
     async fn create(&self, config: &SandboxConfig) -> Result<SandboxId, ProviderError> {
+        crate::provider::capabilities::validate_config(config, &self.capabilities())?;
         Self::check_platform()?;
+        // validate_config above checks kernel/rootfs are present;
+        // this additionally checks the files exist on disk.
         let (kernel, rootfs) = Self::validate_config(config)?;
 
         let id = uuid::Uuid::new_v4().to_string();

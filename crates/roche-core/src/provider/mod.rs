@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Substratum Labs
 
+pub mod capabilities;
 pub mod docker;
 #[cfg(feature = "e2b")]
 pub mod e2b;
@@ -11,10 +12,14 @@ pub mod k8s;
 pub mod wasm;
 
 use crate::types::{ExecOutput, ExecRequest, SandboxConfig, SandboxId, SandboxInfo};
+use capabilities::ProviderCapabilities;
 
 /// Trait that all sandbox providers must implement.
 #[allow(async_fn_in_trait)]
 pub trait SandboxProvider {
+    /// Declare what this provider supports. Used for pre-create validation.
+    fn capabilities(&self) -> ProviderCapabilities;
+
     /// Create a new sandbox, returning its unique ID.
     async fn create(&self, config: &SandboxConfig) -> Result<SandboxId, ProviderError>;
 

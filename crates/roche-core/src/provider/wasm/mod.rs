@@ -34,7 +34,27 @@ impl Default for WasmProvider {
 }
 
 impl SandboxProvider for WasmProvider {
+    fn capabilities(&self) -> crate::provider::capabilities::ProviderCapabilities {
+        use crate::provider::capabilities::{FieldSupport, ProviderCapabilities};
+        ProviderCapabilities {
+            name: "wasm".into(),
+            writable_true: FieldSupport::Supported,
+            writable_false: FieldSupport::Supported,
+            network: FieldSupport::NotApplicable,
+            mounts: FieldSupport::Supported,
+            memory: FieldSupport::NotApplicable,
+            cpus: FieldSupport::NotApplicable,
+            kernel: FieldSupport::NotApplicable,
+            rootfs: FieldSupport::NotApplicable,
+            pause: false,
+            unpause: false,
+            copy_to: false,
+            copy_from: false,
+        }
+    }
+
     async fn create(&self, config: &SandboxConfig) -> Result<SandboxId, ProviderError> {
+        crate::provider::capabilities::validate_config(config, &self.capabilities())?;
         let module = self.engine.compile(&config.image)?;
         let id = uuid::Uuid::new_v4().to_string();
 
