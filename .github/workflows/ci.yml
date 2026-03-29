@@ -21,6 +21,7 @@ jobs:
       - uses: arduino/setup-protoc@v3
         with:
           version: "28.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
@@ -38,6 +39,7 @@ jobs:
       - uses: arduino/setup-protoc@v3
         with:
           version: "28.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: pip install grpcio-tools>=1.60.0
       - run: cd sdk/python && bash scripts/proto-gen.sh
       - run: pip install -e "sdk/python[dev]"
@@ -54,6 +56,7 @@ jobs:
       - uses: arduino/setup-protoc@v3
         with:
           version: "28.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: cd sdk/typescript && npm ci
       - run: cd sdk/typescript && bash scripts/proto-gen.sh
       - run: cd sdk/typescript && npm test
