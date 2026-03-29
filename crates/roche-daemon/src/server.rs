@@ -13,9 +13,12 @@ use roche_core::provider::wasm::WasmProvider;
 use roche_core::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, SandboxProvider};
 use roche_core::sensor::{DockerSensor, SensorDispatch, TraceLevel};
 use roche_core::types::{self, SandboxStatus};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
 pub struct SandboxServiceImpl {
@@ -540,6 +543,118 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         Ok(Response::new(proto::PoolDrainResponse {
             destroyed_count: destroyed,
         }))
+    }
+
+    type ExecStreamStream = Pin<Box<dyn tokio_stream::Stream<Item = Result<proto::ExecEvent, Status>> + Send>>;
+
+    async fn exec_stream(
+        &self,
+        request: Request<proto::ExecStreamRequest>,
+    ) -> Result<Response<Self::ExecStreamStream>, Status> {
+        self.touch_last_rpc();
+        let req = request.into_inner();
+
+        let (tx, rx) = mpsc::channel::<Result<proto::ExecEvent, Status>>(32);
+
+        let exec_req = types::ExecRequest {
+            command: req.command.clone(),
+            timeout_secs: req.timeout_secs,
+            idempotency_key: req.idempotency_key.clone(),
+        };
+        let provider_name = default_provider(&req.provider).to_string();
+        let sandbox_id = req.sandbox_id.clone();
+        let trace_level = TraceLevel::from_proto(req.trace_level);
+        let timeout_secs = req.timeout_secs.unwrap_or(300);
+
+        // Clone what we need for the spawned task
+        let docker = DockerProvider::new();
+        let sensor = SensorDispatch::Docker(DockerSensor);
+
+        tokio::spawn(async move {
+            let start = Instant::now();
+
+            // Start heartbeat task
+            let heartbeat_tx = tx.clone();
+            let heartbeat_handle = tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+                loop {
+                    interval.tick().await;
+                    let elapsed_ms = start.elapsed().as_millis() as u64;
+                    let event = proto::ExecEvent {
+                        event: Some(proto::exec_event::Event::Heartbeat(proto::Heartbeat {
+                            elapsed_ms,
+                            resources: Some(proto::ResourceSnapshot {
+                                timestamp_ms: elapsed_ms,
+                                memory_bytes: 0,
+                                cpu_percent: 0.0,
+                            }),
+                        })),
+                    };
+                    if heartbeat_tx.send(Ok(event)).await.is_err() {
+                        break;
+                    }
+                }
+            });
+
+            // Start trace collector
+            let collector = if trace_level != TraceLevel::Off {
+                sensor.start_trace(&sandbox_id, trace_level).await
+            } else {
+                None
+            };
+
+            // Execute command — for now, run the full exec and stream the result
+            // Future: use docker exec with streaming I/O
+            let result = docker.exec(&sandbox_id, &exec_req).await;
+
+            // Stop heartbeat
+            heartbeat_handle.abort();
+
+            match result {
+                Ok(output) => {
+                    // Send stdout chunk
+                    if !output.stdout.is_empty() {
+                        let _ = tx.send(Ok(proto::ExecEvent {
+                            event: Some(proto::exec_event::Event::Output(proto::OutputChunk {
+                                stream: "stdout".into(),
+                                data: output.stdout.into_bytes(),
+                            })),
+                        })).await;
+                    }
+                    // Send stderr chunk
+                    if !output.stderr.is_empty() {
+                        let _ = tx.send(Ok(proto::ExecEvent {
+                            event: Some(proto::exec_event::Event::Output(proto::OutputChunk {
+                                stream: "stderr".into(),
+                                data: output.stderr.into_bytes(),
+                            })),
+                        })).await;
+                    }
+                    // Finish trace
+                    let trace = if let Some(c) = collector {
+                        c.finish().await.ok().map(trace_to_proto)
+                    } else {
+                        None
+                    };
+                    // Send final result
+                    let _ = tx.send(Ok(proto::ExecEvent {
+                        event: Some(proto::exec_event::Event::Result(proto::ExecResult {
+                            exit_code: output.exit_code,
+                            trace,
+                        })),
+                    })).await;
+                }
+                Err(e) => {
+                    if let Some(c) = collector {
+                        c.abort().await;
+                    }
+                    let _ = tx.send(Err(provider_error_to_status(e))).await;
+                }
+            }
+        });
+
+        let stream = ReceiverStream::new(rx);
+        Ok(Response::new(Box::pin(stream) as Self::ExecStreamStream))
     }
 }
 

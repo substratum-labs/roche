@@ -17,6 +17,7 @@ service SandboxService {
   rpc Gc(GcRequest) returns (GcResponse);
   rpc CopyTo(CopyToRequest) returns (CopyToResponse);
   rpc CopyFrom(CopyFromRequest) returns (CopyFromResponse);
+  rpc ExecStream(ExecStreamRequest) returns (stream ExecEvent);
 }
 
 // CreateRequest configures a new sandbox.
@@ -214,4 +215,61 @@ message ResourceSnapshot {
   uint64 timestamp_ms = 1;
   uint64 memory_bytes = 2;
   float cpu_percent = 3;
+}
+
+// --- Streaming Exec ---
+
+// Request for server-streaming exec.
+message ExecStreamRequest {
+  string sandbox_id = 1;
+  repeated string command = 2;
+  optional uint64 timeout_secs = 3;
+  string provider = 4;
+  TraceLevel trace_level = 5;
+  optional string idempotency_key = 6;
+  RetryPolicy retry_policy = 7;
+  OutputLimit output_limit = 8;
+}
+
+// A single event in the exec stream.
+message ExecEvent {
+  oneof event {
+    OutputChunk output = 1;     // stdout/stderr data
+    Heartbeat heartbeat = 2;    // periodic liveness signal
+    ExecResult result = 3;      // final result (exit code + trace)
+  }
+}
+
+// A chunk of stdout or stderr output.
+message OutputChunk {
+  string stream = 1;  // "stdout" or "stderr"
+  bytes data = 2;
+}
+
+// Periodic heartbeat with resource snapshot.
+message Heartbeat {
+  uint64 elapsed_ms = 1;
+  ResourceSnapshot resources = 2;
+}
+
+// Final result sent as the last event in the stream.
+message ExecResult {
+  int32 exit_code = 1;
+  ExecutionTrace trace = 2;
+}
+
+// --- Retry & Output Policies ---
+
+// Declarative retry policy for exec.
+message RetryPolicy {
+  uint32 max_attempts = 1;           // Total attempts (1 = no retry). Default: 1.
+  string backoff = 2;                // "none", "linear", "exponential". Default: "none".
+  uint64 initial_delay_ms = 3;       // Initial retry delay in ms. Default: 1000.
+  repeated string retry_on = 4;      // Conditions: "timeout", "oom", "nonzero_exit". Empty = retry on any error.
+}
+
+// Output size limits.
+message OutputLimit {
+  uint64 max_bytes = 1;             // Max combined stdout+stderr bytes. 0 = unlimited.
+  string action = 2;                // "truncate" or "error". Default: "truncate".
 }

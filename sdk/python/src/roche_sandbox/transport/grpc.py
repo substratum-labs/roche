@@ -11,7 +11,7 @@ from roche_sandbox.trace import (
     BlockedOperation, ExecutionTrace, FileAccess, NetworkAttempt,
     ResourceSnapshot, ResourceUsage, SyscallEvent,
 )
-from roche_sandbox.types import ExecOutput, SandboxConfig, SandboxInfo, SandboxStatus
+from roche_sandbox.types import ExecEvent, ExecOutput, SandboxConfig, SandboxInfo, SandboxStatus
 
 _PROTO_STATUS_MAP: dict[int, SandboxStatus] = {
     1: "running", 2: "paused", 3: "stopped", 4: "failed",
@@ -176,6 +176,34 @@ class GrpcTransport:
         from roche_sandbox.generated.roche.v1 import sandbox_pb2
         try:
             await self._get_stub().CopyFrom(sandbox_pb2.CopyFromRequest(sandbox_id=sandbox_id, sandbox_path=sandbox_path, host_path=host_path, provider=provider))
+        except Exception as e:
+            raise self._map_grpc_error(e)
+
+    async def exec_stream(self, sandbox_id: str, command: list[str], provider: str, timeout_secs: int | None = None, trace_level: str | None = None):
+        from roche_sandbox.generated.roche.v1 import sandbox_pb2
+        request = sandbox_pb2.ExecStreamRequest(sandbox_id=sandbox_id, command=command, provider=provider)
+        if timeout_secs is not None:
+            request.timeout_secs = timeout_secs
+        if trace_level is not None:
+            request.trace_level = _TRACE_LEVEL_MAP.get(trace_level, 0)
+        try:
+            stream = self._get_stub().ExecStream(request)
+            async for event in stream:
+                which = event.WhichOneof("event")
+                if which == "output":
+                    yield ExecEvent(type="output", stream=event.output.stream, data=event.output.data)
+                elif which == "heartbeat":
+                    hb = event.heartbeat
+                    res = hb.resources if hb.HasField("resources") else None
+                    yield ExecEvent(
+                        type="heartbeat",
+                        elapsed_ms=hb.elapsed_ms,
+                        memory_bytes=res.memory_bytes if res else None,
+                        cpu_percent=res.cpu_percent if res else None,
+                    )
+                elif which == "result":
+                    trace = None  # TODO: convert proto trace to ExecutionTrace
+                    yield ExecEvent(type="result", exit_code=event.result.exit_code, trace=trace)
         except Exception as e:
             raise self._map_grpc_error(e)
 

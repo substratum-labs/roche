@@ -149,6 +149,61 @@ pub struct ExecOutput {
     pub trace: Option<crate::sensor::ExecutionTrace>,
 }
 
+/// A single event in a streaming exec.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ExecEvent {
+    /// A chunk of stdout or stderr output.
+    Output {
+        stream: String,
+        data: Vec<u8>,
+    },
+    /// Periodic heartbeat with resource snapshot.
+    Heartbeat {
+        elapsed_ms: u64,
+        memory_bytes: u64,
+        cpu_percent: f32,
+    },
+    /// Final result (last event in the stream).
+    Result {
+        exit_code: i32,
+        #[serde(default)]
+        trace: Option<crate::sensor::ExecutionTrace>,
+    },
+}
+
+/// Declarative retry policy for exec.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RetryPolicy {
+    /// Total attempts (1 = no retry). Default: 1.
+    #[serde(default = "default_one")]
+    pub max_attempts: u32,
+    /// Backoff strategy: "none", "linear", "exponential". Default: "none".
+    #[serde(default)]
+    pub backoff: String,
+    /// Initial retry delay in ms. Default: 1000.
+    #[serde(default = "default_initial_delay")]
+    pub initial_delay_ms: u64,
+    /// Conditions that trigger a retry: "timeout", "oom", "nonzero_exit".
+    /// Empty = retry on any error.
+    #[serde(default)]
+    pub retry_on: Vec<String>,
+}
+
+fn default_one() -> u32 { 1 }
+fn default_initial_delay() -> u64 { 1000 }
+
+/// Output size limits.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OutputLimit {
+    /// Max combined stdout+stderr bytes. 0 = unlimited.
+    #[serde(default)]
+    pub max_bytes: u64,
+    /// Action when limit exceeded: "truncate" or "error". Default: "truncate".
+    #[serde(default)]
+    pub action: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

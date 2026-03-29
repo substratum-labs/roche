@@ -14,6 +14,7 @@ pub mod proto {
 mod gc;
 mod idempotency;
 mod pool;
+mod retry;
 mod server;
 
 const SECCOMP_TRACE_PROFILE: &str = include_str!("seccomp-trace.json");

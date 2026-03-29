@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
-from roche_sandbox.types import ExecOutput
+from roche_sandbox.types import ExecEvent, ExecOutput
 
 if TYPE_CHECKING:
     from roche_sandbox.transport import Transport
@@ -28,6 +29,11 @@ class AsyncSandbox:
 
     async def exec(self, command: list[str], timeout_secs: int | None = None, trace_level: str | None = None, idempotency_key: str | None = None) -> ExecOutput:
         return await self._transport.exec(self._id, command, self._provider, timeout_secs, trace_level=trace_level, idempotency_key=idempotency_key)
+
+    async def exec_stream(self, command: list[str], timeout_secs: int | None = None, trace_level: str | None = None) -> AsyncIterator[ExecEvent]:
+        """Stream exec events (output chunks, heartbeats, final result) as an async iterator."""
+        async for event in self._transport.exec_stream(self._id, command, self._provider, timeout_secs, trace_level=trace_level):
+            yield event
 
     async def pause(self) -> None:
         await self._transport.pause(self._id, self._provider)
