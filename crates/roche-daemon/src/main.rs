@@ -14,6 +14,7 @@ pub mod proto {
 mod gc;
 mod idempotency;
 mod pool;
+#[allow(dead_code)]
 mod retry;
 mod server;
 
