@@ -73,11 +73,32 @@ pub fn analyze(code: &str, language: &str) -> CodeIntent {
 fn analyze_network(intent: &mut CodeIntent, code: &str, language: &str) {
     // Detect HTTP/network libraries
     let network_indicators: &[(&str, &[&str])] = &[
-        ("python", &["import requests", "import urllib", "import httpx", "import aiohttp",
-                      "from requests", "from urllib", "from httpx", "from aiohttp",
-                      "import socket", "import http.client"]),
-        ("node", &["require('http')", "require('https')", "require('axios')",
-                    "require('node-fetch')", "import fetch", "import axios"]),
+        (
+            "python",
+            &[
+                "import requests",
+                "import urllib",
+                "import httpx",
+                "import aiohttp",
+                "from requests",
+                "from urllib",
+                "from httpx",
+                "from aiohttp",
+                "import socket",
+                "import http.client",
+            ],
+        ),
+        (
+            "node",
+            &[
+                "require('http')",
+                "require('https')",
+                "require('axios')",
+                "require('node-fetch')",
+                "import fetch",
+                "import axios",
+            ],
+        ),
         ("bash", &["curl ", "wget ", "nc ", "ssh "]),
     ];
 
@@ -86,7 +107,9 @@ fn analyze_network(intent: &mut CodeIntent, code: &str, language: &str) {
             for indicator in *indicators {
                 if code.contains(indicator) {
                     intent.needs_network = true;
-                    intent.reasoning.push(format!("Network access needed: found `{indicator}`"));
+                    intent
+                        .reasoning
+                        .push(format!("Network access needed: found `{indicator}`"));
                     break;
                 }
             }
@@ -99,10 +122,7 @@ fn analyze_network(intent: &mut CodeIntent, code: &str, language: &str) {
 
 fn extract_hosts(intent: &mut CodeIntent, code: &str) {
     // Simple pattern: look for quoted strings containing domain-like patterns
-    let patterns = [
-        "https://", "http://",
-        "api.", "www.",
-    ];
+    let patterns = ["https://", "http://", "api.", "www."];
 
     for line in code.lines() {
         for pattern in &patterns {
@@ -121,12 +141,14 @@ fn extract_hosts(intent: &mut CodeIntent, code: &str) {
 
 fn extract_host_from_url(s: &str) -> Option<String> {
     // Strip protocol
-    let s = s.strip_prefix("https://")
+    let s = s
+        .strip_prefix("https://")
         .or_else(|| s.strip_prefix("http://"))
         .unwrap_or(s);
 
     // Take until first non-hostname char
-    let host: String = s.chars()
+    let host: String = s
+        .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '.' || *c == '-' || *c == ':')
         .collect();
 
@@ -143,12 +165,31 @@ fn extract_host_from_url(s: &str) -> Option<String> {
 
 fn analyze_packages(intent: &mut CodeIntent, code: &str, language: &str) {
     let package_indicators: &[(&str, &str, &[&str])] = &[
-        ("python", "pip", &["pip install", "pip3 install", "import subprocess"]),
-        ("python", "pip", &["import pandas", "import numpy", "import scipy",
-                            "import sklearn", "import tensorflow", "import torch",
-                            "import matplotlib", "import seaborn"]),
+        (
+            "python",
+            "pip",
+            &["pip install", "pip3 install", "import subprocess"],
+        ),
+        (
+            "python",
+            "pip",
+            &[
+                "import pandas",
+                "import numpy",
+                "import scipy",
+                "import sklearn",
+                "import tensorflow",
+                "import torch",
+                "import matplotlib",
+                "import seaborn",
+            ],
+        ),
         ("node", "npm", &["npm install", "npx ", "require('"]),
-        ("bash", "apt", &["apt-get install", "apt install", "yum install", "apk add"]),
+        (
+            "bash",
+            "apt",
+            &["apt-get install", "apt install", "yum install", "apk add"],
+        ),
     ];
 
     for (lang, pm, indicators) in package_indicators {
@@ -158,7 +199,9 @@ fn analyze_packages(intent: &mut CodeIntent, code: &str, language: &str) {
                     intent.needs_packages = true;
                     intent.needs_network = true;
                     intent.package_manager = Some(pm.to_string());
-                    intent.reasoning.push(format!("Package install needed: found `{indicator}`"));
+                    intent
+                        .reasoning
+                        .push(format!("Package install needed: found `{indicator}`"));
 
                     // Add package registry to hosts
                     let registry = match *pm {
@@ -166,7 +209,8 @@ fn analyze_packages(intent: &mut CodeIntent, code: &str, language: &str) {
                         "npm" => "registry.npmjs.org",
                         _ => "",
                     };
-                    if !registry.is_empty() && !intent.network_hosts.contains(&registry.to_string()) {
+                    if !registry.is_empty() && !intent.network_hosts.contains(&registry.to_string())
+                    {
                         intent.network_hosts.push(registry.to_string());
                     }
                     break;
@@ -178,9 +222,29 @@ fn analyze_packages(intent: &mut CodeIntent, code: &str, language: &str) {
 
 fn analyze_filesystem(intent: &mut CodeIntent, code: &str, language: &str) {
     let write_indicators: &[(&str, &[&str])] = &[
-        ("python", &["open(", "with open", ".write(", ".to_csv(", ".to_json(",
-                     ".to_parquet(", "os.makedirs(", "os.mkdir(", "pathlib"]),
-        ("node", &["fs.writeFile", "fs.writeSync", "fs.mkdir", "createWriteStream"]),
+        (
+            "python",
+            &[
+                "open(",
+                "with open",
+                ".write(",
+                ".to_csv(",
+                ".to_json(",
+                ".to_parquet(",
+                "os.makedirs(",
+                "os.mkdir(",
+                "pathlib",
+            ],
+        ),
+        (
+            "node",
+            &[
+                "fs.writeFile",
+                "fs.writeSync",
+                "fs.mkdir",
+                "createWriteStream",
+            ],
+        ),
         ("bash", &[" > ", " >> ", "mkdir ", "touch ", "tee "]),
     ];
 
@@ -189,7 +253,9 @@ fn analyze_filesystem(intent: &mut CodeIntent, code: &str, language: &str) {
             for indicator in *indicators {
                 if code.contains(indicator) {
                     intent.needs_writable = true;
-                    intent.reasoning.push(format!("Filesystem write needed: found `{indicator}`"));
+                    intent
+                        .reasoning
+                        .push(format!("Filesystem write needed: found `{indicator}`"));
                     break;
                 }
             }
@@ -223,7 +289,9 @@ fn analyze_resources(intent: &mut CodeIntent, code: &str, _language: &str) {
     for lib in &heavy_libs {
         if code.contains(lib) {
             intent.memory_hint = Some("512m".to_string());
-            intent.reasoning.push(format!("Memory hint 512m: data library `{lib}` detected"));
+            intent
+                .reasoning
+                .push(format!("Memory hint 512m: data library `{lib}` detected"));
             break;
         }
     }
@@ -259,7 +327,10 @@ mod tests {
 
     #[test]
     fn test_requests_detects_network() {
-        let intent = analyze("import requests\nresponses = requests.get('https://api.openai.com/v1/chat')", "python");
+        let intent = analyze(
+            "import requests\nresponses = requests.get('https://api.openai.com/v1/chat')",
+            "python",
+        );
         assert_eq!(intent.provider, ProviderHint::Docker);
         assert!(intent.needs_network);
         assert!(intent.network_hosts.contains(&"api.openai.com".to_string()));
@@ -267,28 +338,40 @@ mod tests {
 
     #[test]
     fn test_pip_install_detects_packages() {
-        let intent = analyze("import subprocess\nsubprocess.run(['pip', 'install', 'pandas'])", "python");
+        let intent = analyze(
+            "import subprocess\nsubprocess.run(['pip', 'install', 'pandas'])",
+            "python",
+        );
         assert!(intent.needs_packages || intent.needs_network);
         assert_eq!(intent.provider, ProviderHint::Docker);
     }
 
     #[test]
     fn test_pandas_import_detects_memory() {
-        let intent = analyze("import pandas as pd\ndf = pd.read_csv('data.csv')", "python");
+        let intent = analyze(
+            "import pandas as pd\ndf = pd.read_csv('data.csv')",
+            "python",
+        );
         assert_eq!(intent.memory_hint, Some("512m".to_string()));
         assert_eq!(intent.provider, ProviderHint::Docker);
     }
 
     #[test]
     fn test_file_write_detects_writable() {
-        let intent = analyze("with open('/tmp/output.txt', 'w') as f:\n    f.write('hello')", "python");
+        let intent = analyze(
+            "with open('/tmp/output.txt', 'w') as f:\n    f.write('hello')",
+            "python",
+        );
         assert!(intent.needs_writable);
         assert!(intent.writable_paths.contains(&"/tmp".to_string()));
     }
 
     #[test]
     fn test_curl_bash() {
-        let intent = analyze("curl https://api.github.com/repos/foo/bar | jq '.name'", "bash");
+        let intent = analyze(
+            "curl https://api.github.com/repos/foo/bar | jq '.name'",
+            "bash",
+        );
         assert!(intent.needs_network);
         assert!(intent.network_hosts.contains(&"api.github.com".to_string()));
         assert_eq!(intent.provider, ProviderHint::Docker);
@@ -298,7 +381,9 @@ mod tests {
     fn test_node_fetch() {
         let intent = analyze("import fetch from 'node-fetch';\nconst res = await fetch('https://jsonplaceholder.typicode.com/todos/1');", "node");
         assert!(intent.needs_network);
-        assert!(intent.network_hosts.contains(&"jsonplaceholder.typicode.com".to_string()));
+        assert!(intent
+            .network_hosts
+            .contains(&"jsonplaceholder.typicode.com".to_string()));
     }
 
     #[test]

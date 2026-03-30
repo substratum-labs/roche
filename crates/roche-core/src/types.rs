@@ -154,10 +154,7 @@ pub struct ExecOutput {
 #[serde(tag = "type")]
 pub enum ExecEvent {
     /// A chunk of stdout or stderr output.
-    Output {
-        stream: String,
-        data: Vec<u8>,
-    },
+    Output { stream: String, data: Vec<u8> },
     /// Periodic heartbeat with resource snapshot.
     Heartbeat {
         elapsed_ms: u64,
@@ -190,8 +187,12 @@ pub struct RetryPolicy {
     pub retry_on: Vec<String>,
 }
 
-fn default_one() -> u32 { 1 }
-fn default_initial_delay() -> u64 { 1000 }
+fn default_one() -> u32 {
+    1
+}
+fn default_initial_delay() -> u64 {
+    1000
+}
 
 /// Output size limits.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

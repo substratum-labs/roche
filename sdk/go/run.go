@@ -122,7 +122,7 @@ func Run(ctx context.Context, code string, opts ...RunOptions) (*ExecOutput, err
 
 	sandbox, err := client.Create(ctx, SandboxConfig{
 		Image:            config.image,
-		TimeoutSecs:      int(timeoutSecs),
+		TimeoutSecs:      timeoutSecs,
 		Network:          network,
 		Writable:         writable,
 		Memory:           o.Memory,

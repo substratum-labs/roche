@@ -298,12 +298,16 @@ mod tests {
             .change_permissions(&id, PermissionChange::AllowHost("api.openai.com".into()))
             .unwrap();
         assert!(perms.network);
-        assert!(perms.network_allowlist.contains(&"api.openai.com".to_string()));
+        assert!(perms
+            .network_allowlist
+            .contains(&"api.openai.com".to_string()));
 
         let perms = mgr
             .change_permissions(&id, PermissionChange::DenyHost("api.openai.com".into()))
             .unwrap();
-        assert!(!perms.network_allowlist.contains(&"api.openai.com".to_string()));
+        assert!(!perms
+            .network_allowlist
+            .contains(&"api.openai.com".to_string()));
     }
 
     #[test]

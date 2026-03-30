@@ -111,10 +111,7 @@ pub fn validate_config(
 
     // network_allowlist
     if !config.network_allowlist.is_empty() && caps.network_allowlist == FieldSupport::Unsupported {
-        violations.push(format!(
-            "{} does not support network allowlist",
-            caps.name
-        ));
+        violations.push(format!("{} does not support network allowlist", caps.name));
     }
 
     // fs_paths
@@ -269,7 +266,10 @@ mod tests {
         let config = SandboxConfig::default();
         let err = validate_config(&config, &e2b_caps()).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("read-only"), "expected read-only error, got: {msg}");
+        assert!(
+            msg.contains("read-only"),
+            "expected read-only error, got: {msg}"
+        );
     }
 
     #[test]

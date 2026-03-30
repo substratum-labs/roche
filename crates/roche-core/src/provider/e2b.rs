@@ -190,7 +190,6 @@ impl E2bProvider {
         ))
     }
 
-
     /// Build the envd base URL for a given sandbox.
     fn envd_url(&self, sandbox_id: &str, domain: &str) -> String {
         format!("https://{ENVD_PORT}-{sandbox_id}.{domain}")

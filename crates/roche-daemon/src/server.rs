@@ -545,7 +545,8 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         }))
     }
 
-    type ExecStreamStream = Pin<Box<dyn tokio_stream::Stream<Item = Result<proto::ExecEvent, Status>> + Send>>;
+    type ExecStreamStream =
+        Pin<Box<dyn tokio_stream::Stream<Item = Result<proto::ExecEvent, Status>> + Send>>;
 
     async fn exec_stream(
         &self,
@@ -614,21 +615,25 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
                 Ok(output) => {
                     // Send stdout chunk
                     if !output.stdout.is_empty() {
-                        let _ = tx.send(Ok(proto::ExecEvent {
-                            event: Some(proto::exec_event::Event::Output(proto::OutputChunk {
-                                stream: "stdout".into(),
-                                data: output.stdout.into_bytes(),
-                            })),
-                        })).await;
+                        let _ = tx
+                            .send(Ok(proto::ExecEvent {
+                                event: Some(proto::exec_event::Event::Output(proto::OutputChunk {
+                                    stream: "stdout".into(),
+                                    data: output.stdout.into_bytes(),
+                                })),
+                            }))
+                            .await;
                     }
                     // Send stderr chunk
                     if !output.stderr.is_empty() {
-                        let _ = tx.send(Ok(proto::ExecEvent {
-                            event: Some(proto::exec_event::Event::Output(proto::OutputChunk {
-                                stream: "stderr".into(),
-                                data: output.stderr.into_bytes(),
-                            })),
-                        })).await;
+                        let _ = tx
+                            .send(Ok(proto::ExecEvent {
+                                event: Some(proto::exec_event::Event::Output(proto::OutputChunk {
+                                    stream: "stderr".into(),
+                                    data: output.stderr.into_bytes(),
+                                })),
+                            }))
+                            .await;
                     }
                     // Finish trace
                     let trace = if let Some(c) = collector {
@@ -637,12 +642,14 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
                         None
                     };
                     // Send final result
-                    let _ = tx.send(Ok(proto::ExecEvent {
-                        event: Some(proto::exec_event::Event::Result(proto::ExecResult {
-                            exit_code: output.exit_code,
-                            trace,
-                        })),
-                    })).await;
+                    let _ = tx
+                        .send(Ok(proto::ExecEvent {
+                            event: Some(proto::exec_event::Event::Result(proto::ExecResult {
+                                exit_code: output.exit_code,
+                                trace,
+                            })),
+                        }))
+                        .await;
                 }
                 Err(e) => {
                     if let Some(c) = collector {
