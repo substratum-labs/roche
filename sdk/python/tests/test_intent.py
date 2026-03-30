@@ -21,8 +21,8 @@ class TestIntentAnalysis(unittest.TestCase):
         assert "api.openai.com" in intent.network_hosts
 
     def test_pip_install(self):
-        intent = analyze("pip install pandas", "bash")
-        assert intent.needs_packages or intent.needs_network
+        intent = analyze("pip install pandas", "python")
+        assert intent.needs_packages
         assert intent.provider == "docker"
 
     def test_pandas_memory_hint(self):

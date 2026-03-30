@@ -395,7 +395,11 @@ mod tests {
 
     #[test]
     fn test_host_extraction_with_port() {
+        // localhost has no dot, so it's filtered out (we only extract FQDN hosts)
         let host = extract_host_from_url("http://localhost:8080/api");
-        assert_eq!(host, Some("localhost".to_string()));
+        assert_eq!(host, None);
+
+        let host = extract_host_from_url("http://api.example.com:8080/api");
+        assert_eq!(host, Some("api.example.com".to_string()));
     }
 }
