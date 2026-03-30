@@ -7,7 +7,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Instant;
 
 /// Unique session identifier.
 pub type SessionId = String;
@@ -86,6 +85,12 @@ pub enum SessionError {
 /// Manages active execution sessions.
 pub struct SessionManager {
     sessions: Mutex<HashMap<SessionId, SessionState>>,
+}
+
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SessionManager {

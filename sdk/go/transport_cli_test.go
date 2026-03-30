@@ -44,7 +44,7 @@ func TestCLITransportCreateArgs(t *testing.T) {
 func TestCLITransportExecArgs(t *testing.T) {
 	tr := &CLITransport{Binary: "roche"}
 	timeout := uint64(30)
-	args := tr.buildExecArgs("abc123", []string{"echo", "hello"}, "docker", &timeout)
+	args := tr.buildExecArgs("abc123", []string{"echo", "hello"}, "docker", &ExecOptions{TimeoutSecs: &timeout})
 	assertContainsSeq(t, args, "--sandbox", "abc123")
 	assertContainsSeq(t, args, "--provider", "docker")
 	assertContainsSeq(t, args, "--timeout", "30")

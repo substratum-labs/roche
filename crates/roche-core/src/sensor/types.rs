@@ -4,19 +4,14 @@
 use serde::{Deserialize, Serialize};
 
 /// Controls the level of detail captured in execution traces.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TraceLevel {
     Off = 0,
     Summary = 1,
+    #[default]
     Standard = 2,
     Full = 3,
-}
-
-impl Default for TraceLevel {
-    fn default() -> Self {
-        Self::Standard
-    }
 }
 
 impl PartialOrd for TraceLevel {

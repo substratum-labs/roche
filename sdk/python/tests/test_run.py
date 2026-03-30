@@ -4,7 +4,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from roche_sandbox.run import RunOptions, _detect_language, _detect_provider, async_run
+from roche_sandbox.run import RunOptions, _detect_language, _check_provider_available, async_run
 from roche_sandbox.types import ExecOutput
 
 
@@ -22,14 +22,14 @@ class TestDetectLanguage(unittest.TestCase):
         assert _detect_language("x = 1") == "python"
 
 
-class TestDetectProvider(unittest.TestCase):
+class TestCheckProviderAvailable(unittest.TestCase):
     @patch("shutil.which", return_value="/usr/bin/docker")
     def test_docker_available(self, _):
-        assert _detect_provider() == "docker"
+        assert _check_provider_available("docker") is True
 
     @patch("shutil.which", return_value=None)
-    def test_docker_fallback(self, _):
-        assert _detect_provider() == "docker"  # fallback for now
+    def test_docker_not_available(self, _):
+        assert _check_provider_available("docker") is False
 
 
 class TestAsyncRun(unittest.IsolatedAsyncioTestCase):

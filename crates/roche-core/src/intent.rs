@@ -270,10 +270,11 @@ fn extract_writable_paths(intent: &mut CodeIntent, code: &str) {
     // Look for common writable paths in string literals
     let common_paths = ["/tmp", "/output", "/data", "/workspace", "/home"];
     for path in &common_paths {
-        if code.contains(path) && intent.needs_writable {
-            if !intent.writable_paths.contains(&path.to_string()) {
-                intent.writable_paths.push(path.to_string());
-            }
+        if code.contains(path)
+            && intent.needs_writable
+            && !intent.writable_paths.contains(&path.to_string())
+        {
+            intent.writable_paths.push(path.to_string());
         }
     }
 
