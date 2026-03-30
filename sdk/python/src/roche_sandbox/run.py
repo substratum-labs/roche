@@ -10,6 +10,7 @@ import shutil
 from dataclasses import dataclass, field
 
 from roche_sandbox.client import AsyncRoche
+from roche_sandbox.intent import CodeIntent, analyze
 from roche_sandbox.types import ExecOutput
 
 
@@ -21,18 +22,22 @@ class RunOptions:
     """Language hint: 'python', 'node', 'bash', 'auto'. Determines image and command wrapper."""
     timeout_secs: int = 30
     """Maximum execution time in seconds."""
-    network: bool = False
-    """Allow network access."""
-    network_allowlist: list[str] = field(default_factory=list)
-    """Restrict network to these hosts (requires network=True)."""
-    writable: bool = False
-    """Allow filesystem writes."""
-    fs_paths: list[str] = field(default_factory=list)
-    """Writable filesystem paths (e.g., ['/tmp', '/data'])."""
+    network: bool | None = None
+    """Allow network access. None = auto-detect from code."""
+    network_allowlist: list[str] | None = None
+    """Restrict network to these hosts. None = auto-detect from code."""
+    writable: bool | None = None
+    """Allow filesystem writes. None = auto-detect from code."""
+    fs_paths: list[str] | None = None
+    """Writable filesystem paths. None = auto-detect from code."""
     memory: str | None = None
-    """Memory limit (e.g., '256m')."""
+    """Memory limit. None = auto-detect from code."""
     trace_level: str = "summary"
     """Trace level: 'off', 'summary', 'standard', 'full'."""
+    provider: str | None = None
+    """Provider override. None = auto-select based on code analysis."""
+    auto_infer: bool = True
+    """Enable intent-based analysis. Set False to disable auto-detection."""
 
 
 # Language → (image, command builder)
@@ -61,21 +66,33 @@ def _detect_language(code: str) -> str:
     return "python"
 
 
-def _detect_provider() -> str:
-    """Pick the best available provider. Docker first, then fallback."""
-    if shutil.which("docker"):
-        return "docker"
-    # Future: check for WASM runtime, Firecracker, etc.
-    return "docker"
+def _check_provider_available(provider: str) -> bool:
+    """Check if a provider's runtime is available."""
+    if provider == "docker":
+        return shutil.which("docker") is not None
+    return False
 
 
 async def async_run(code: str, opts: RunOptions | None = None, **kwargs) -> ExecOutput:
     """Execute code in a sandbox and return the result. One-liner async API.
 
+    Uses intent-based analysis to auto-detect:
+    - Best provider (WASM for pure compute, Docker for packages/network)
+    - Network permissions (allowlist from detected URLs)
+    - Filesystem permissions (writable paths from detected file ops)
+    - Memory hints (from detected data libraries)
+
     Usage:
         result = await roche.async_run("print(2 + 2)")
         print(result.stdout)   # "4\\n"
-        print(result.trace)    # ExecutionTrace(...)
+
+        # With network — auto-detected:
+        result = await roche.async_run(\"\"\"
+            import requests
+            r = requests.get('https://api.github.com')
+            print(r.status_code)
+        \"\"\")
+        # Roche auto-infers: network=True, network_allowlist=["api.github.com"]
     """
     if opts is None:
         opts = RunOptions(**kwargs)
@@ -85,19 +102,33 @@ async def async_run(code: str, opts: RunOptions | None = None, **kwargs) -> Exec
     if lang == "auto":
         lang = _detect_language(code)
 
+    # Run intent analysis
+    intent = analyze(code, lang) if opts.auto_infer else CodeIntent(language=lang)
+
+    # Resolve settings: explicit opts override auto-inferred
+    network = opts.network if opts.network is not None else intent.needs_network
+    network_allowlist = opts.network_allowlist if opts.network_allowlist is not None else intent.network_hosts
+    writable = opts.writable if opts.writable is not None else intent.needs_writable
+    fs_paths = opts.fs_paths if opts.fs_paths is not None else intent.writable_paths
+    memory = opts.memory if opts.memory is not None else intent.memory_hint
+    provider = opts.provider if opts.provider is not None else intent.provider
+
+    # Fallback if recommended provider not available
+    if provider == "wasm" and not _check_provider_available("wasm"):
+        provider = "docker"
+
     image, cmd_builder = _LANGUAGE_CONFIG.get(lang, _LANGUAGE_CONFIG["python"])
     command = cmd_builder(code)
-    provider = _detect_provider()
 
     client = AsyncRoche(provider=provider)
     sandbox = await client.create(
         image=image,
         timeout_secs=opts.timeout_secs,
-        network=opts.network or bool(opts.network_allowlist),
-        writable=opts.writable or bool(opts.fs_paths),
-        memory=opts.memory,
-        network_allowlist=opts.network_allowlist,
-        fs_paths=opts.fs_paths,
+        network=network or bool(network_allowlist),
+        writable=writable or bool(fs_paths),
+        memory=memory,
+        network_allowlist=network_allowlist or [],
+        fs_paths=fs_paths or [],
     )
     try:
         result = await sandbox.exec(
@@ -118,5 +149,9 @@ def run(code: str, opts: RunOptions | None = None, **kwargs) -> ExecOutput:
 
         result = run("print(2 + 2)")
         print(result.stdout)   # "4\\n"
+
+        # Auto-detects network needs:
+        result = run("import requests; print(requests.get('https://httpbin.org/ip').text)")
+        # Auto-inferred: network=True, allowlist=["httpbin.org"]
     """
     return asyncio.run(async_run(code, opts, **kwargs))

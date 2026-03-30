@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Substratum Labs
 
+pub mod intent;
 pub mod provider;
 pub mod sensor;
+pub mod session;
 pub mod types;
 
 pub use provider::capabilities::{validate_config, FieldSupport, ProviderCapabilities};
