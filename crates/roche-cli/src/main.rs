@@ -676,6 +676,8 @@ macro_rules! run_provider_commands {
                     kernel,
                     rootfs,
                     trace_enabled: true,
+                    network_allowlist: vec![],
+                    fs_paths: vec![],
                 };
                 for _ in 0..count {
                     match provider.create(&config).await {
