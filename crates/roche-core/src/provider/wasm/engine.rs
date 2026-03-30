@@ -183,6 +183,7 @@ mod tests {
         let request = ExecRequest {
             command: vec!["test".to_string()],
             timeout_secs: None,
+            idempotency_key: None,
         };
 
         let result = engine.execute(&module, &config, &request);

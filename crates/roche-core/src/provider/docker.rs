@@ -519,6 +519,7 @@ mod tests {
         let request = ExecRequest {
             command: vec!["python3".into(), "-c".into(), "print('hi')".into()],
             timeout_secs: None,
+            idempotency_key: None,
         };
         let args = build_exec_args(&id, &request);
 

@@ -101,6 +101,7 @@ mod tests {
         let request = ExecRequest {
             command: vec!["echo".into(), "hello".into()],
             timeout_secs: None,
+            idempotency_key: None,
         };
         let result = rt.block_on(exec_via_vsock(3, &request, 30));
         assert!(result.is_err());

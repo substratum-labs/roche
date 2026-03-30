@@ -18,6 +18,7 @@ async fn test_trace_summary_returns_duration() {
             &ExecRequest {
                 command: vec!["echo".into(), "hello".into()],
                 timeout_secs: Some(10),
+                idempotency_key: None,
             },
         )
         .await
@@ -49,6 +50,7 @@ async fn test_trace_standard_detects_file_writes() {
                     "echo test > /tmp/output.txt".into(),
                 ],
                 timeout_secs: Some(10),
+                idempotency_key: None,
             },
         )
         .await

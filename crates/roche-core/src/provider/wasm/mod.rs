@@ -164,6 +164,7 @@ mod tests {
         let request = ExecRequest {
             command: vec!["test".to_string()],
             timeout_secs: None,
+            idempotency_key: None,
         };
         let result = provider.exec(&"no-such-id".to_string(), &request).await;
         assert!(result.is_err());

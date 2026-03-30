@@ -40,6 +40,7 @@ async fn test_exec_simple_command() {
     let request = ExecRequest {
         command: vec!["echo".into(), "hello roche".into()],
         timeout_secs: Some(30),
+        idempotency_key: None,
     };
     let output = provider.exec(&id, &request).await.expect("exec failed");
 
@@ -59,6 +60,7 @@ async fn test_exec_python() {
     let request = ExecRequest {
         command: vec!["python3".into(), "-c".into(), "print(2 + 2)".into()],
         timeout_secs: Some(30),
+        idempotency_key: None,
     };
     let output = provider.exec(&id, &request).await.expect("exec failed");
 
@@ -77,6 +79,7 @@ async fn test_exec_nonzero_exit() {
     let request = ExecRequest {
         command: vec!["sh".into(), "-c".into(), "exit 42".into()],
         timeout_secs: Some(30),
+        idempotency_key: None,
     };
     let output = provider.exec(&id, &request).await.expect("exec failed");
 
@@ -124,6 +127,7 @@ async fn test_network_disabled_by_default() {
             "import urllib.request; urllib.request.urlopen('http://1.1.1.1', timeout=3)".into(),
         ],
         timeout_secs: Some(10),
+        idempotency_key: None,
     };
     let output = provider.exec(&id, &request).await.expect("exec failed");
     assert_ne!(output.exit_code, 0, "Network should be disabled by default");
@@ -142,6 +146,7 @@ async fn test_readonly_fs_by_default() {
     let request = ExecRequest {
         command: vec!["sh".into(), "-c".into(), "touch /test_readonly 2>&1".into()],
         timeout_secs: Some(10),
+        idempotency_key: None,
     };
     let output = provider.exec(&id, &request).await.expect("exec failed");
     assert_ne!(output.exit_code, 0, "Root FS should be read-only");
