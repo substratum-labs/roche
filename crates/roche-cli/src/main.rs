@@ -692,6 +692,7 @@ macro_rules! run_provider_commands {
                 let request = roche_core::types::ExecRequest {
                     command,
                     timeout_secs: timeout,
+                    idempotency_key: None,
                 };
                 let output = provider.exec(&sandbox, &request).await?;
                 print!("{}", output.stdout);

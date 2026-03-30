@@ -562,10 +562,10 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
             timeout_secs: req.timeout_secs,
             idempotency_key: req.idempotency_key.clone(),
         };
-        let provider_name = default_provider(&req.provider).to_string();
+        let _provider_name = default_provider(&req.provider).to_string();
         let sandbox_id = req.sandbox_id.clone();
         let trace_level = TraceLevel::from_proto(req.trace_level);
-        let timeout_secs = req.timeout_secs.unwrap_or(300);
+        let _timeout_secs = req.timeout_secs.unwrap_or(300);
 
         // Clone what we need for the spawned task
         let docker = DockerProvider::new();
