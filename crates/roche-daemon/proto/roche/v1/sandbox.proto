@@ -20,6 +20,7 @@ service SandboxService {
   rpc PoolStatus(PoolStatusRequest) returns (PoolStatusResponse);
   rpc PoolWarmup(PoolWarmupRequest) returns (PoolWarmupResponse);
   rpc PoolDrain(PoolDrainRequest) returns (PoolDrainResponse);
+  rpc ExecStream(ExecStreamRequest) returns (stream ExecEvent);
 }
 
 // CreateRequest configures a new sandbox.
@@ -241,4 +242,52 @@ message ResourceSnapshot {
   uint64 timestamp_ms = 1;
   uint64 memory_bytes = 2;
   float cpu_percent = 3;
+}
+
+// --- Streaming Exec ---
+
+message ExecStreamRequest {
+  string sandbox_id = 1;
+  repeated string command = 2;
+  optional uint64 timeout_secs = 3;
+  string provider = 4;
+  TraceLevel trace_level = 5;
+  optional string idempotency_key = 6;
+  RetryPolicy retry_policy = 7;
+  OutputLimit output_limit = 8;
+}
+
+message ExecEvent {
+  oneof event {
+    OutputChunk output = 1;
+    Heartbeat heartbeat = 2;
+    ExecResult result = 3;
+  }
+}
+
+message OutputChunk {
+  string stream = 1;
+  bytes data = 2;
+}
+
+message Heartbeat {
+  uint64 elapsed_ms = 1;
+  ResourceSnapshot resources = 2;
+}
+
+message ExecResult {
+  int32 exit_code = 1;
+  ExecutionTrace trace = 2;
+}
+
+message RetryPolicy {
+  uint32 max_attempts = 1;
+  string backoff = 2;
+  uint64 initial_delay_ms = 3;
+  repeated string retry_on = 4;
+}
+
+message OutputLimit {
+  uint64 max_bytes = 1;
+  string action = 2;
 }

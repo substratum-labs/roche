@@ -44,6 +44,36 @@ class ExecOutput:
 
 
 @dataclass
+class ExecEvent:
+    """A single event from a streaming exec."""
+    type: Literal["output", "heartbeat", "result"]
+    # output fields
+    stream: str | None = None  # "stdout" or "stderr"
+    data: bytes | None = None
+    # heartbeat fields
+    elapsed_ms: int | None = None
+    memory_bytes: int | None = None
+    cpu_percent: float | None = None
+    # result fields
+    exit_code: int | None = None
+    trace: ExecutionTrace | None = None
+
+
+@dataclass
+class RetryPolicy:
+    max_attempts: int = 1
+    backoff: str = "none"
+    initial_delay_ms: int = 1000
+    retry_on: list[str] = field(default_factory=list)
+
+
+@dataclass
+class OutputLimit:
+    max_bytes: int = 0
+    action: str = "truncate"
+
+
+@dataclass
 class SandboxInfo:
     id: str
     status: SandboxStatus

@@ -18,6 +18,7 @@ roche-core = { version = "0.1.0", path = "../roche-core", features = ["wasmtime"
 tonic = "0.12"
 prost = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tokio-stream = "0.1"
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"
 serde_json = "1"

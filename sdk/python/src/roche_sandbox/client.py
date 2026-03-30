@@ -70,6 +70,8 @@ class AsyncRoche:
         mounts: list | None = None,
         kernel: str | None = None,
         rootfs: str | None = None,
+        network_allowlist: list[str] | None = None,
+        fs_paths: list[str] | None = None,
     ) -> AsyncSandbox:
         effective_provider = provider or self._provider
         config = SandboxConfig(
@@ -84,6 +86,8 @@ class AsyncRoche:
             mounts=mounts or [],
             kernel=kernel,
             rootfs=rootfs,
+            network_allowlist=network_allowlist or [],
+            fs_paths=fs_paths or [],
         )
         sandbox_id = await self._transport.create(config, effective_provider)
         return AsyncSandbox(sandbox_id, effective_provider, self._transport)

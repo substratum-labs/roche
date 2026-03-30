@@ -13,7 +13,7 @@ from roche_sandbox.errors import (
     TimeoutError, UnsupportedOperation,
 )
 from roche_sandbox.trace import ExecutionTrace, ResourceUsage
-from roche_sandbox.types import ExecOutput, SandboxConfig, SandboxInfo
+from roche_sandbox.types import ExecEvent, ExecOutput, SandboxConfig, SandboxInfo
 
 
 class CliTransport:
@@ -71,6 +71,15 @@ class CliTransport:
                 ),
             )
         return ExecOutput(exit_code=returncode, stdout=stdout, stderr=stderr, trace=trace)
+
+    async def exec_stream(self, sandbox_id: str, command: list[str], provider: str, timeout_secs: int | None = None, trace_level: str | None = None):
+        """CLI fallback: run exec and yield events from the result."""
+        result = await self.exec(sandbox_id, command, provider, timeout_secs, trace_level=trace_level)
+        if result.stdout:
+            yield ExecEvent(type="output", stream="stdout", data=result.stdout.encode())
+        if result.stderr:
+            yield ExecEvent(type="output", stream="stderr", data=result.stderr.encode())
+        yield ExecEvent(type="result", exit_code=result.exit_code, trace=result.trace)
 
     async def destroy(self, sandbox_ids: list[str], provider: str, all: bool = False) -> list[str]:
         args = ["destroy"]
