@@ -35,18 +35,54 @@ def _classify_violation(desc: str) -> str:
     return "unknown"
 
 
-class RocheCastorBridge:
-    """Bridges Roche sandbox execution with Castor's security kernel.
+def roche_tools(**kwargs: Any) -> list[Callable]:
+    """Return Roche sandbox tools ready for Castor. Simplest integration.
 
     Usage::
 
-        from castor import Castor
-        from roche_sandbox.castor import RocheCastorBridge
+        from roche_sandbox.castor import roche_tools
+        kernel = Castor(tools=roche_tools() + my_tools, default_budgets={"compute": 10})
 
-        bridge = RocheCastorBridge()
-        kernel = Castor(tools=bridge.tools, default_budgets={"compute": 10.0})
+    All kwargs are forwarded to RocheCastorBridge.
+    """
+    bridge = RocheCastorBridge(**kwargs)
+    return bridge.tools
 
-        cp = await kernel.run(my_agent, budgets={"compute": 10.0})
+
+def roche_castor(
+    budgets: dict[str, float] | None = None,
+    **kwargs: Any,
+) -> Any:
+    """Create a Castor kernel with Roche tools pre-registered. One-liner.
+
+    Usage::
+
+        from roche_sandbox.castor import roche_castor
+        kernel = roche_castor(budgets={"compute": 10})
+        cp = await kernel.run(my_agent)
+
+    Args:
+        budgets: Default Castor budgets. If None, defaults to {"compute": 10.0}.
+        **kwargs: Forwarded to RocheCastorBridge (e.g. stream_policy, provider).
+    """
+    from castor import Castor
+
+    bridge = RocheCastorBridge(**kwargs)
+    return Castor(
+        tools=bridge.tools,
+        default_budgets=budgets or {"compute": 10.0},
+    )
+
+
+class RocheCastorBridge:
+    """Bridges Roche sandbox execution with Castor's security kernel.
+
+    For most users, use ``roche_castor()`` or ``roche_tools()`` instead.
+
+    Advanced usage::
+
+        bridge = RocheCastorBridge(stream_policy=StreamPolicy(...))
+        kernel = Castor(tools=bridge.tools + other_tools)
     """
 
     def __init__(
