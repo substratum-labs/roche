@@ -1,0 +1,172 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 Substratum Labs
+
+"""RocheCastorBridge: main integration class between Roche and Castor."""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Callable
+from typing import Any
+
+from roche_sandbox.castor._intent_gate import check_intent_against_capabilities
+from roche_sandbox.castor._tools import make_execute_code_tool, make_execute_shell_tool
+from roche_sandbox.castor._types import (
+    EscalationPolicy,
+    IntentCheckResult,
+    ViolationRecord,
+)
+from roche_sandbox.castor._violations import ViolationTracker
+
+
+def _classify_violation(desc: str) -> str:
+    """Classify a violation description string into a violation type."""
+    if desc.startswith("blocked:"):
+        return "blocked_op"
+    if desc.startswith("unauthorized_network:"):
+        return "unauthorized_network"
+    if desc.startswith("unauthorized_write:"):
+        return "unauthorized_write"
+    return "unknown"
+
+
+class RocheCastorBridge:
+    """Bridges Roche sandbox execution with Castor's security kernel.
+
+    Usage::
+
+        from castor import Castor
+        from roche_sandbox.castor import RocheCastorBridge
+
+        bridge = RocheCastorBridge()
+        kernel = Castor(tools=bridge.tools, default_budgets={"compute": 10.0})
+
+        cp = await kernel.run(my_agent, budgets={"compute": 10.0})
+    """
+
+    def __init__(
+        self,
+        *,
+        escalation_policy: EscalationPolicy | None = None,
+        default_trace_level: str = "standard",
+        compute_cost: float = 1.0,
+        provider: str | None = None,
+        intent_pre_check: bool = True,
+    ) -> None:
+        self._tracker = ViolationTracker(escalation_policy or EscalationPolicy())
+        self._intent_pre_check = intent_pre_check
+
+        self._execute_code = make_execute_code_tool(
+            default_trace_level=default_trace_level,
+            cost_per_use=compute_cost,
+            provider=provider,
+        )
+        self._execute_shell = make_execute_shell_tool(
+            default_trace_level=default_trace_level,
+            cost_per_use=compute_cost,
+            provider=provider,
+        )
+
+        # Wrap tools to intercept results for violation tracking
+        self._execute_code = self._wrap_with_tracking(self._execute_code)
+        self._execute_shell = self._wrap_with_tracking(self._execute_shell)
+
+    def _wrap_with_tracking(self, tool_fn: Callable) -> Callable:
+        """Wrap a tool function to intercept results for violation tracking."""
+        bridge = self
+        original_meta = getattr(tool_fn, "_castor_metadata", None)
+
+        async def wrapped(**kwargs: Any) -> dict[str, Any]:
+            result = await tool_fn(**kwargs)
+            return bridge.process_result(result)
+
+        # Preserve castor metadata so the tool is still recognized
+        if original_meta is not None:
+            original_meta.func = wrapped
+            wrapped._castor_metadata = original_meta  # type: ignore[attr-defined]
+        wrapped.__name__ = tool_fn.__name__  # type: ignore[attr-defined]
+        wrapped.__doc__ = tool_fn.__doc__
+        return wrapped
+
+    @property
+    def tools(self) -> list[Callable]:
+        """Return tool functions for passing to Castor(tools=...).
+
+        Usage::
+
+            bridge = RocheCastorBridge()
+            kernel = Castor(tools=bridge.tools + other_tools)
+        """
+        tools: list[Callable] = [self._execute_code, self._execute_shell]
+        if self._intent_pre_check:
+            tools.append(self._check_intent_tool)
+        return tools
+
+    @property
+    def tracker(self) -> ViolationTracker:
+        """Access the violation tracker for external monitoring."""
+        return self._tracker
+
+    def check_intent(
+        self,
+        code: str,
+        language: str = "auto",
+        capabilities: dict[str, Any] | None = None,
+    ) -> IntentCheckResult:
+        """Pre-check code intent against capabilities (convenience method)."""
+        return check_intent_against_capabilities(code, language, capabilities or {})
+
+    def process_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        """Post-process execution result: record violations, check escalation.
+
+        Called internally by wrapped tools. Records violations and annotates
+        the result with an ``escalation_needed`` flag.
+        """
+        signals = result.get("signals", {})
+        violations = signals.get("violations", [])
+
+        for v_desc in violations:
+            record = ViolationRecord(
+                timestamp=time.time(),
+                tool_name=result.get("_tool_name", "unknown"),
+                violation_type=_classify_violation(v_desc),
+                detail=v_desc,
+                code_snippet=result.get("_code", "")[:200],
+            )
+            self._tracker.record(record)
+
+        result["escalation_needed"] = self._tracker.should_escalate()
+        return result
+
+    @staticmethod
+    async def _check_intent_tool_impl(code: str, language: str = "auto") -> dict[str, Any]:
+        """Pre-check code intent without executing. Returns capability requirements."""
+        from roche_sandbox.intent import analyze
+
+        intent = analyze(code, language)
+        return {
+            "provider": intent.provider,
+            "needs_network": intent.needs_network,
+            "network_hosts": intent.network_hosts,
+            "needs_writable": intent.needs_writable,
+            "writable_paths": intent.writable_paths,
+            "needs_packages": intent.needs_packages,
+            "package_manager": intent.package_manager,
+            "memory_hint": intent.memory_hint,
+            "confidence": intent.confidence,
+            "reasoning": intent.reasoning,
+        }
+
+    @property
+    def _check_intent_tool(self) -> Callable:
+        """Lazy-create the check_code_intent tool with @castor_tool decorator."""
+        if not hasattr(self, "_cached_check_intent"):
+            from castor.gate.decorator import castor_tool
+
+            @castor_tool(consumes="_default", cost_per_use=0.0)
+            async def check_code_intent(code: str, language: str = "auto") -> dict[str, Any]:
+                """Pre-check code intent without executing. Free (no budget cost)."""
+                return await RocheCastorBridge._check_intent_tool_impl(code, language)
+
+            self._cached_check_intent = check_code_intent
+        return self._cached_check_intent
