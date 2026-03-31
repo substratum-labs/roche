@@ -760,23 +760,26 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
     ) -> Result<Response<proto::CreateSessionResponse>, Status> {
         self.touch_last_rpc();
         let req = request.into_inner();
-        let permissions = req.permissions.map(|p| roche_core::DynamicPermissions {
-            network: p.network,
-            network_allowlist: p.network_allowlist,
-            writable: p.writable,
-            fs_paths: p.fs_paths,
-        }).unwrap_or_default();
-        let budget = req.budget.map(|b| roche_core::Budget {
-            max_execs: b.max_execs,
-            max_total_secs: b.max_total_secs,
-            max_output_bytes: b.max_output_bytes,
-        }).unwrap_or_default();
-        let session_id = self.session_manager.create(
-            req.sandbox_id,
-            req.provider,
-            permissions,
-            budget,
-        );
+        let permissions = req
+            .permissions
+            .map(|p| roche_core::DynamicPermissions {
+                network: p.network,
+                network_allowlist: p.network_allowlist,
+                writable: p.writable,
+                fs_paths: p.fs_paths,
+            })
+            .unwrap_or_default();
+        let budget = req
+            .budget
+            .map(|b| roche_core::Budget {
+                max_execs: b.max_execs,
+                max_total_secs: b.max_total_secs,
+                max_output_bytes: b.max_output_bytes,
+            })
+            .unwrap_or_default();
+        let session_id =
+            self.session_manager
+                .create(req.sandbox_id, req.provider, permissions, budget);
         Ok(Response::new(proto::CreateSessionResponse { session_id }))
     }
 
@@ -944,10 +947,7 @@ mod tests {
     #[test]
     fn test_session_error_to_status() {
         let cases: Vec<(SessionError, tonic::Code)> = vec![
-            (
-                SessionError::NotFound("x".into()),
-                tonic::Code::NotFound,
-            ),
+            (SessionError::NotFound("x".into()), tonic::Code::NotFound),
             (
                 SessionError::BudgetExceeded("x".into()),
                 tonic::Code::ResourceExhausted,
@@ -996,9 +996,6 @@ mod tests {
 
     #[test]
     fn test_resolve_provider_fallback() {
-        assert_eq!(
-            resolve_provider("", &["ls".into(), "-la".into()]),
-            "docker"
-        );
+        assert_eq!(resolve_provider("", &["ls".into(), "-la".into()]), "docker");
     }
 }
