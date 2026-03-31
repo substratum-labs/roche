@@ -21,9 +21,12 @@ except ImportError:
 from roche_sandbox.castor._bridge import RocheCastorBridge
 from roche_sandbox.castor._intent_gate import check_intent_against_capabilities
 from roche_sandbox.castor._signals import extract_signals
+from roche_sandbox.castor._stream_monitor import StreamEvent, StreamMonitor, StreamPolicy
 from roche_sandbox.castor._tools import (
     execute_code,
+    execute_code_stream,
     execute_shell,
+    make_execute_code_stream_tool,
     make_execute_code_tool,
     make_execute_shell_tool,
 )
@@ -37,14 +40,23 @@ from roche_sandbox.castor._violations import ViolationTracker
 
 __all__ = [
     "RocheCastorBridge",
+    # L1+L2: batch execution tools
     "execute_code",
     "execute_shell",
     "make_execute_code_tool",
     "make_execute_shell_tool",
+    # L3: streaming execution + real-time monitoring
+    "execute_code_stream",
+    "make_execute_code_stream_tool",
+    "StreamMonitor",
+    "StreamPolicy",
+    "StreamEvent",
+    # Types
     "ExecutionSignals",
     "IntentCheckResult",
     "ViolationRecord",
     "EscalationPolicy",
+    # Utilities
     "extract_signals",
     "check_intent_against_capabilities",
     "ViolationTracker",

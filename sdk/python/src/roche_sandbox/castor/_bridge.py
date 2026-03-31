@@ -10,7 +10,12 @@ from collections.abc import Callable
 from typing import Any
 
 from roche_sandbox.castor._intent_gate import check_intent_against_capabilities
-from roche_sandbox.castor._tools import make_execute_code_tool, make_execute_shell_tool
+from roche_sandbox.castor._stream_monitor import StreamMonitor, StreamPolicy
+from roche_sandbox.castor._tools import (
+    make_execute_code_tool,
+    make_execute_code_stream_tool,
+    make_execute_shell_tool,
+)
 from roche_sandbox.castor._types import (
     EscalationPolicy,
     IntentCheckResult,
@@ -52,9 +57,11 @@ class RocheCastorBridge:
         compute_cost: float = 1.0,
         provider: str | None = None,
         intent_pre_check: bool = True,
+        stream_policy: StreamPolicy | None = None,
     ) -> None:
         self._tracker = ViolationTracker(escalation_policy or EscalationPolicy())
         self._intent_pre_check = intent_pre_check
+        self._stream_policy = stream_policy
 
         self._execute_code = make_execute_code_tool(
             default_trace_level=default_trace_level,
@@ -66,10 +73,17 @@ class RocheCastorBridge:
             cost_per_use=compute_cost,
             provider=provider,
         )
+        self._execute_code_stream = make_execute_code_stream_tool(
+            default_trace_level=default_trace_level,
+            cost_per_use=compute_cost,
+            provider=provider,
+            stream_policy=stream_policy,
+        )
 
         # Wrap tools to intercept results for violation tracking
         self._execute_code = self._wrap_with_tracking(self._execute_code)
         self._execute_shell = self._wrap_with_tracking(self._execute_shell)
+        self._execute_code_stream = self._wrap_with_tracking(self._execute_code_stream)
 
     def _wrap_with_tracking(self, tool_fn: Callable) -> Callable:
         """Wrap a tool function to intercept results for violation tracking."""
@@ -97,7 +111,7 @@ class RocheCastorBridge:
             bridge = RocheCastorBridge()
             kernel = Castor(tools=bridge.tools + other_tools)
         """
-        tools: list[Callable] = [self._execute_code, self._execute_shell]
+        tools: list[Callable] = [self._execute_code, self._execute_shell, self._execute_code_stream]
         if self._intent_pre_check:
             tools.append(self._check_intent_tool)
         return tools
@@ -106,6 +120,27 @@ class RocheCastorBridge:
     def tracker(self) -> ViolationTracker:
         """Access the violation tracker for external monitoring."""
         return self._tracker
+
+    def create_monitor(
+        self,
+        castor_task: Any | None = None,
+        policy: StreamPolicy | None = None,
+    ) -> StreamMonitor:
+        """Create a StreamMonitor wired to this bridge's tracker and policy.
+
+        For advanced use — when you want to manually control streaming execution
+        and have the monitor preempt a specific CastorTask on violations::
+
+            task = await kernel.run_async(my_agent)
+            monitor = bridge.create_monitor(castor_task=task)
+            async for event in monitor.watch(sandbox, command):
+                ...  # events flow, monitor may kill sandbox + preempt agent
+        """
+        return StreamMonitor(
+            policy=policy or self._stream_policy or StreamPolicy(),
+            tracker=self._tracker,
+            castor_task=castor_task,
+        )
 
     def check_intent(
         self,
