@@ -6,7 +6,10 @@ import { CliTransport } from "./transport/cli";
 import { GrpcTransport } from "./transport/grpc";
 import { detectDaemon } from "./daemon";
 import { Sandbox } from "./sandbox";
-import type { SandboxConfig, ExecOutput, SandboxInfo } from "./types";
+import type {
+  SandboxConfig, ExecOutput, SandboxInfo, Budget, DynamicPermissions,
+  SessionInfo, PermissionChange, CodeIntent,
+} from "./types";
 import type { TraceLevel } from "./trace";
 import { DEFAULTS } from "./types";
 
@@ -72,5 +75,38 @@ export class Roche {
   async gc(dryRun?: boolean, all?: boolean): Promise<string[]> {
     const transport = await this.getTransport();
     return transport.gc(this.provider, dryRun, all);
+  }
+
+  async createSession(
+    sandboxId: string,
+    options?: { provider?: string; permissions?: DynamicPermissions; budget?: Budget },
+  ): Promise<string> {
+    const transport = await this.getTransport();
+    return transport.createSession(
+      sandboxId,
+      options?.provider ?? this.provider,
+      options?.permissions,
+      options?.budget,
+    );
+  }
+
+  async destroySession(sessionId: string): Promise<SessionInfo> {
+    const transport = await this.getTransport();
+    return transport.destroySession(sessionId);
+  }
+
+  async listSessions(): Promise<SessionInfo[]> {
+    const transport = await this.getTransport();
+    return transport.listSessions();
+  }
+
+  async updatePermissions(sessionId: string, change: PermissionChange): Promise<DynamicPermissions> {
+    const transport = await this.getTransport();
+    return transport.updatePermissions(sessionId, change);
+  }
+
+  async analyzeIntent(code: string, language: string = "python"): Promise<CodeIntent> {
+    const transport = await this.getTransport();
+    return transport.analyzeIntent(code, language);
   }
 }

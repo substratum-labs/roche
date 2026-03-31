@@ -80,3 +80,36 @@ class SandboxInfo:
     provider: str
     image: str
     expires_at: int | None = None
+
+
+@dataclass
+class Budget:
+    max_execs: int = 0
+    max_total_secs: int = 0
+    max_output_bytes: int = 0
+
+
+@dataclass
+class BudgetUsage:
+    exec_count: int = 0
+    total_secs: float = 0.0
+    output_bytes: int = 0
+
+
+@dataclass
+class DynamicPermissions:
+    network: bool = False
+    network_allowlist: list[str] = field(default_factory=list)
+    writable: bool = False
+    fs_paths: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SessionInfo:
+    session_id: str
+    sandbox_id: str
+    provider: str
+    permissions: DynamicPermissions
+    budget: Budget
+    usage: BudgetUsage
+    created_at_ms: int

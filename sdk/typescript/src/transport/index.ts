@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Substratum Labs
 
-import type { SandboxConfig, ExecOutput, SandboxInfo } from "../types";
+import type {
+  SandboxConfig, ExecOutput, SandboxInfo, Budget, DynamicPermissions,
+  SessionInfo, PermissionChange, CodeIntent,
+} from "../types";
 import type { TraceLevel } from "../trace";
 
 export interface Transport {
@@ -39,4 +42,17 @@ export interface Transport {
     hostPath: string,
     provider: string
   ): Promise<void>;
+  createSession(
+    sandboxId: string,
+    provider: string,
+    permissions?: DynamicPermissions,
+    budget?: Budget,
+  ): Promise<string>;
+  destroySession(sessionId: string): Promise<SessionInfo>;
+  listSessions(): Promise<SessionInfo[]>;
+  updatePermissions(
+    sessionId: string,
+    change: PermissionChange,
+  ): Promise<DynamicPermissions>;
+  analyzeIntent(code: string, language: string): Promise<CodeIntent>;
 }

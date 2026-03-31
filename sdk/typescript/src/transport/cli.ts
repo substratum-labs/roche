@@ -4,7 +4,10 @@
 import { execFile } from "child_process";
 import { performance } from "perf_hooks";
 import type { Transport } from "./index";
-import type { SandboxConfig, ExecOutput, SandboxInfo } from "../types";
+import type {
+  SandboxConfig, ExecOutput, SandboxInfo, Budget, DynamicPermissions,
+  SessionInfo, PermissionChange, CodeIntent,
+} from "../types";
 import type { TraceLevel } from "../trace";
 import { ExecutionTrace } from "../trace";
 import { DEFAULTS } from "../types";
@@ -173,6 +176,26 @@ export class CliTransport implements Transport {
     provider: string,
   ): Promise<void> {
     await this.run(["cp", `${sandboxId}:${sandboxPath}`, hostPath]);
+  }
+
+  async createSession(): Promise<string> {
+    throw new UnsupportedOperation("Session management requires the daemon (roched)");
+  }
+
+  async destroySession(): Promise<SessionInfo> {
+    throw new UnsupportedOperation("Session management requires the daemon (roched)");
+  }
+
+  async listSessions(): Promise<SessionInfo[]> {
+    throw new UnsupportedOperation("Session management requires the daemon (roched)");
+  }
+
+  async updatePermissions(): Promise<DynamicPermissions> {
+    throw new UnsupportedOperation("Session management requires the daemon (roched)");
+  }
+
+  async analyzeIntent(): Promise<CodeIntent> {
+    throw new UnsupportedOperation("Intent analysis requires the daemon (roched)");
   }
 
   private run(

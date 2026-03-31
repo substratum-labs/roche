@@ -12,6 +12,12 @@ export type {
   SandboxInfo,
   SandboxStatus,
   Mount,
+  Budget,
+  BudgetUsage,
+  DynamicPermissions,
+  SessionInfo,
+  PermissionChange,
+  CodeIntent,
 } from "./types";
 export {
   RocheError,

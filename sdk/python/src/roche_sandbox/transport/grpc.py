@@ -11,7 +11,11 @@ from roche_sandbox.trace import (
     BlockedOperation, ExecutionTrace, FileAccess, NetworkAttempt,
     ResourceSnapshot, ResourceUsage, SyscallEvent,
 )
-from roche_sandbox.types import ExecEvent, ExecOutput, SandboxConfig, SandboxInfo, SandboxStatus
+from roche_sandbox.intent import CodeIntent
+from roche_sandbox.types import (
+    Budget, BudgetUsage, DynamicPermissions, ExecEvent, ExecOutput,
+    SandboxConfig, SandboxInfo, SandboxStatus, SessionInfo,
+)
 
 _PROTO_STATUS_MAP: dict[int, SandboxStatus] = {
     1: "running", 2: "paused", 3: "stopped", 4: "failed",
@@ -206,6 +210,85 @@ class GrpcTransport:
                     yield ExecEvent(type="result", exit_code=event.result.exit_code, trace=trace)
         except Exception as e:
             raise self._map_grpc_error(e)
+
+    async def create_session(self, sandbox_id: str, provider: str, permissions: DynamicPermissions | None = None, budget: Budget | None = None) -> str:
+        from roche_sandbox.generated.roche.v1 import sandbox_pb2
+        req_kwargs: dict = {"sandbox_id": sandbox_id, "provider": provider}
+        if permissions is not None:
+            req_kwargs["permissions"] = sandbox_pb2.DynamicPermissions(
+                network=permissions.network, network_allowlist=permissions.network_allowlist,
+                writable=permissions.writable, fs_paths=permissions.fs_paths,
+            )
+        if budget is not None:
+            req_kwargs["budget"] = sandbox_pb2.Budget(
+                max_execs=budget.max_execs, max_total_secs=budget.max_total_secs,
+                max_output_bytes=budget.max_output_bytes,
+            )
+        try:
+            response = await self._get_stub().CreateSession(sandbox_pb2.CreateSessionRequest(**req_kwargs))
+        except Exception as e:
+            raise self._map_grpc_error(e)
+        return response.session_id
+
+    async def destroy_session(self, session_id: str) -> SessionInfo:
+        from roche_sandbox.generated.roche.v1 import sandbox_pb2
+        try:
+            response = await self._get_stub().DestroySession(sandbox_pb2.DestroySessionRequest(session_id=session_id))
+        except Exception as e:
+            raise self._map_grpc_error(e)
+        return self._proto_to_session_info(response.session)
+
+    async def list_sessions(self) -> list[SessionInfo]:
+        from roche_sandbox.generated.roche.v1 import sandbox_pb2
+        try:
+            response = await self._get_stub().ListSessions(sandbox_pb2.ListSessionsRequest())
+        except Exception as e:
+            raise self._map_grpc_error(e)
+        return [self._proto_to_session_info(s) for s in response.sessions]
+
+    async def update_permissions(self, session_id: str, change: dict) -> DynamicPermissions:
+        from roche_sandbox.generated.roche.v1 import sandbox_pb2
+        pc = sandbox_pb2.PermissionChange(**change)
+        try:
+            response = await self._get_stub().UpdatePermissions(
+                sandbox_pb2.UpdatePermissionsRequest(session_id=session_id, change=pc)
+            )
+        except Exception as e:
+            raise self._map_grpc_error(e)
+        p = response.permissions
+        return DynamicPermissions(
+            network=p.network, network_allowlist=list(p.network_allowlist),
+            writable=p.writable, fs_paths=list(p.fs_paths),
+        )
+
+    async def analyze_intent(self, code: str, language: str) -> CodeIntent:
+        from roche_sandbox.generated.roche.v1 import sandbox_pb2
+        try:
+            r = await self._get_stub().AnalyzeIntent(sandbox_pb2.AnalyzeIntentRequest(code=code, language=language))
+        except Exception as e:
+            raise self._map_grpc_error(e)
+        return CodeIntent(
+            provider=r.provider, needs_network=r.needs_network, network_hosts=list(r.network_hosts),
+            needs_writable=r.needs_writable, writable_paths=list(r.writable_paths),
+            needs_packages=r.needs_packages, package_manager=r.package_manager or None,
+            memory_hint=r.memory_hint or None, language=r.language, confidence=r.confidence,
+            reasoning=list(r.reasoning),
+        )
+
+    def _proto_to_session_info(self, s) -> SessionInfo:
+        p = s.permissions
+        b = s.budget
+        u = s.usage
+        return SessionInfo(
+            session_id=s.session_id, sandbox_id=s.sandbox_id, provider=s.provider,
+            permissions=DynamicPermissions(
+                network=p.network, network_allowlist=list(p.network_allowlist),
+                writable=p.writable, fs_paths=list(p.fs_paths),
+            ),
+            budget=Budget(max_execs=b.max_execs, max_total_secs=b.max_total_secs, max_output_bytes=b.max_output_bytes),
+            usage=BudgetUsage(exec_count=u.exec_count, total_secs=u.total_secs, output_bytes=u.output_bytes),
+            created_at_ms=s.created_at_ms,
+        )
 
     def _map_grpc_error(self, err: Exception) -> RocheError:
         code_str = ""

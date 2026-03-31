@@ -120,6 +120,21 @@ class CliTransport:
     async def copy_from(self, sandbox_id: str, sandbox_path: str, host_path: str, provider: str) -> None:
         await self._run(["cp", f"{sandbox_id}:{sandbox_path}", host_path])
 
+    async def create_session(self, sandbox_id, provider, permissions=None, budget=None):
+        raise UnsupportedOperation("Session management requires the daemon (roched)")
+
+    async def destroy_session(self, session_id):
+        raise UnsupportedOperation("Session management requires the daemon (roched)")
+
+    async def list_sessions(self):
+        raise UnsupportedOperation("Session management requires the daemon (roched)")
+
+    async def update_permissions(self, session_id, change):
+        raise UnsupportedOperation("Session management requires the daemon (roched)")
+
+    async def analyze_intent(self, code, language):
+        raise UnsupportedOperation("Intent analysis requires the daemon (roched)")
+
     async def _run(self, args: list[str]) -> tuple[str, str]:
         stdout, stderr, returncode = await self._run_unchecked(args)
         if returncode != 0:

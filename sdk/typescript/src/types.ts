@@ -42,6 +42,57 @@ export interface SandboxInfo {
   expiresAt?: number;
 }
 
+export interface Budget {
+  maxExecs?: number;
+  maxTotalSecs?: number;
+  maxOutputBytes?: number;
+}
+
+export interface BudgetUsage {
+  execCount: number;
+  totalSecs: number;
+  outputBytes: number;
+}
+
+export interface DynamicPermissions {
+  network: boolean;
+  networkAllowlist: string[];
+  writable: boolean;
+  fsPaths: string[];
+}
+
+export interface SessionInfo {
+  sessionId: string;
+  sandboxId: string;
+  provider: string;
+  permissions: DynamicPermissions;
+  budget: Budget;
+  usage: BudgetUsage;
+  createdAtMs: number;
+}
+
+export type PermissionChange =
+  | { allowHost: string }
+  | { denyHost: string }
+  | { allowPath: string }
+  | { denyPath: string }
+  | { enableNetwork: true }
+  | { disableNetwork: true };
+
+export interface CodeIntent {
+  provider: string;
+  needsNetwork: boolean;
+  networkHosts: string[];
+  needsWritable: boolean;
+  writablePaths: string[];
+  needsPackages: boolean;
+  packageManager?: string;
+  memoryHint?: string;
+  language: string;
+  confidence: number;
+  reasoning: string[];
+}
+
 export const DEFAULTS = {
   provider: "docker",
   image: "python:3.12-slim",

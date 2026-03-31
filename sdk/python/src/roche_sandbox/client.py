@@ -10,7 +10,10 @@ from roche_sandbox.daemon import detect_daemon, _find_bundled_binary, _spawn_dae
 from roche_sandbox.sandbox import AsyncSandbox, Sandbox
 from roche_sandbox.transport.cli import CliTransport
 from roche_sandbox.transport.grpc import GrpcTransport
-from roche_sandbox.types import ExecOutput, SandboxConfig, SandboxInfo
+from roche_sandbox.intent import CodeIntent
+from roche_sandbox.types import (
+    Budget, DynamicPermissions, ExecOutput, SandboxConfig, SandboxInfo, SessionInfo,
+)
 
 if TYPE_CHECKING:
     from roche_sandbox.transport import Transport
@@ -110,6 +113,30 @@ class AsyncRoche:
     async def gc(self, dry_run: bool = False, all: bool = False) -> list[str]:
         return await self._transport.gc(self._provider, dry_run, all)
 
+    async def create_session(
+        self,
+        sandbox_id: str,
+        *,
+        provider: str | None = None,
+        permissions: DynamicPermissions | None = None,
+        budget: Budget | None = None,
+    ) -> str:
+        return await self._transport.create_session(
+            sandbox_id, provider or self._provider, permissions, budget
+        )
+
+    async def destroy_session(self, session_id: str) -> SessionInfo:
+        return await self._transport.destroy_session(session_id)
+
+    async def list_sessions(self) -> list[SessionInfo]:
+        return await self._transport.list_sessions()
+
+    async def update_permissions(self, session_id: str, **change) -> DynamicPermissions:
+        return await self._transport.update_permissions(session_id, change)
+
+    async def analyze_intent(self, code: str, language: str = "python") -> CodeIntent:
+        return await self._transport.analyze_intent(code, language)
+
 
 class Roche:
     def __init__(self, **kwargs):
@@ -135,3 +162,18 @@ class Roche:
 
     def gc(self, dry_run: bool = False, all: bool = False) -> list[str]:
         return asyncio.run(self._async.gc(dry_run, all))
+
+    def create_session(self, sandbox_id: str, **kwargs) -> str:
+        return asyncio.run(self._async.create_session(sandbox_id, **kwargs))
+
+    def destroy_session(self, session_id: str) -> SessionInfo:
+        return asyncio.run(self._async.destroy_session(session_id))
+
+    def list_sessions(self) -> list[SessionInfo]:
+        return asyncio.run(self._async.list_sessions())
+
+    def update_permissions(self, session_id: str, **change) -> DynamicPermissions:
+        return asyncio.run(self._async.update_permissions(session_id, **change))
+
+    def analyze_intent(self, code: str, language: str = "python") -> CodeIntent:
+        return asyncio.run(self._async.analyze_intent(code, language))

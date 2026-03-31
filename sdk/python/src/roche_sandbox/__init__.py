@@ -18,7 +18,10 @@ from roche_sandbox.errors import (
     UnsupportedOperation,
 )
 from roche_sandbox.sandbox import AsyncSandbox, Sandbox
-from roche_sandbox.types import ExecEvent, ExecOutput, Mount, OutputLimit, RetryPolicy, SandboxConfig, SandboxInfo, SandboxStatus
+from roche_sandbox.types import (
+    Budget, BudgetUsage, DynamicPermissions, ExecEvent, ExecOutput, Mount,
+    OutputLimit, RetryPolicy, SandboxConfig, SandboxInfo, SandboxStatus, SessionInfo,
+)
 
 __all__ = [
     "AsyncRoche",
@@ -45,4 +48,8 @@ __all__ = [
     "RunOptions",
     "CodeIntent",
     "analyze",
+    "Budget",
+    "BudgetUsage",
+    "DynamicPermissions",
+    "SessionInfo",
 ]

@@ -3,7 +3,10 @@
 
 import * as grpc from "@grpc/grpc-js";
 import type { Transport } from "./index";
-import type { SandboxConfig, ExecOutput, SandboxInfo, SandboxStatus } from "../types";
+import type {
+  SandboxConfig, ExecOutput, SandboxInfo, SandboxStatus,
+  Budget, DynamicPermissions, SessionInfo, PermissionChange, CodeIntent,
+} from "../types";
 import type { TraceLevel } from "../trace";
 import { TRACE_LEVEL_MAP, protoToExecutionTrace } from "../trace";
 import { DEFAULTS } from "../types";
@@ -135,6 +138,82 @@ export class GrpcTransport implements Transport {
 
   async copyFrom(sandboxId: string, sandboxPath: string, hostPath: string, provider: string): Promise<void> {
     await this.call("copyFrom", { sandboxId, sandboxPath, hostPath, provider });
+  }
+
+  async createSession(
+    sandboxId: string,
+    provider: string,
+    permissions?: DynamicPermissions,
+    budget?: Budget,
+  ): Promise<string> {
+    const response = await this.call("createSession", { sandboxId, provider, permissions, budget });
+    return response.sessionId;
+  }
+
+  async destroySession(sessionId: string): Promise<SessionInfo> {
+    const response = await this.call("destroySession", { sessionId });
+    return this.toSessionInfo(response.session);
+  }
+
+  async listSessions(): Promise<SessionInfo[]> {
+    const response = await this.call("listSessions", {});
+    return (response.sessions ?? []).map((s: any) => this.toSessionInfo(s));
+  }
+
+  async updatePermissions(sessionId: string, change: PermissionChange): Promise<DynamicPermissions> {
+    const response = await this.call("updatePermissions", { sessionId, change });
+    const p = response.permissions;
+    return {
+      network: p.network,
+      networkAllowlist: p.networkAllowlist ?? [],
+      writable: p.writable,
+      fsPaths: p.fsPaths ?? [],
+    };
+  }
+
+  async analyzeIntent(code: string, language: string): Promise<CodeIntent> {
+    const r = await this.call("analyzeIntent", { code, language });
+    return {
+      provider: r.provider,
+      needsNetwork: r.needsNetwork,
+      networkHosts: r.networkHosts ?? [],
+      needsWritable: r.needsWritable,
+      writablePaths: r.writablePaths ?? [],
+      needsPackages: r.needsPackages,
+      packageManager: r.packageManager || undefined,
+      memoryHint: r.memoryHint || undefined,
+      language: r.language,
+      confidence: r.confidence,
+      reasoning: r.reasoning ?? [],
+    };
+  }
+
+  private toSessionInfo(s: any): SessionInfo {
+    const p = s.permissions ?? {};
+    const b = s.budget ?? {};
+    const u = s.usage ?? {};
+    return {
+      sessionId: s.sessionId,
+      sandboxId: s.sandboxId,
+      provider: s.provider,
+      permissions: {
+        network: p.network ?? false,
+        networkAllowlist: p.networkAllowlist ?? [],
+        writable: p.writable ?? false,
+        fsPaths: p.fsPaths ?? [],
+      },
+      budget: {
+        maxExecs: b.maxExecs ?? 0,
+        maxTotalSecs: b.maxTotalSecs ?? 0,
+        maxOutputBytes: b.maxOutputBytes ?? 0,
+      },
+      usage: {
+        execCount: u.execCount ?? 0,
+        totalSecs: u.totalSecs ?? 0,
+        outputBytes: u.outputBytes ?? 0,
+      },
+      createdAtMs: s.createdAtMs ?? 0,
+    };
   }
 
   private async call(method: string, request: any): Promise<any> {
