@@ -125,6 +125,7 @@ impl SessionManager {
             budget,
             usage: BudgetUsage::default(),
             created_at_ms: now_ms,
+            agent_pids: vec![],
         };
 
         self.sessions.lock().unwrap().insert(id.clone(), state);
