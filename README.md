@@ -149,6 +149,58 @@ await sandbox.destroy()
 </details>
 
 <details>
+<summary>Parallel execution: run multiple tasks concurrently</summary>
+
+```python
+from roche_sandbox import run_parallel
+
+results = run_parallel([
+    {"code": "print('task 1')"},
+    {"code": "print('task 2')"},
+    {"file": "script.py"},
+], max_concurrency=5)
+
+print(f"{results.total_succeeded} ok, {results.total_failed} failed")
+```
+
+</details>
+
+<details>
+<summary>Snapshot & restore: save sandbox state, resume instantly</summary>
+
+```python
+from roche_sandbox import Roche, snapshot, restore
+
+roche = Roche()
+sandbox = roche.create(writable=True)
+sandbox.exec(["pip", "install", "numpy", "pandas"])
+
+# Save state
+snap = snapshot(sandbox.id)
+sandbox.destroy()
+
+# Later — restore in <1s (no reinstall)
+result = restore(snap, ["python3", "-c", "import numpy; print(numpy.__version__)"])
+```
+
+</details>
+
+<details>
+<summary>Dependency caching: pip/npm cache persists across sandboxes</summary>
+
+```python
+from roche_sandbox import run_cached
+
+# First run: installs deps (~30s)
+result = run_cached(path="./ml-project/")
+
+# Second run: cache hit (<1s for deps)
+result = run_cached(path="./ml-project/")
+```
+
+</details>
+
+<details>
 <summary>Sessions: persistent state across multiple exec calls</summary>
 
 ```python
