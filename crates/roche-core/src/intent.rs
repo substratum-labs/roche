@@ -309,8 +309,15 @@ fn extract_writable_paths(intent: &mut CodeIntent, code: &str) {
 fn analyze_resources(intent: &mut CodeIntent, code: &str, _language: &str) {
     // Data-heavy libraries suggest more memory
     let heavy_libs = [
-        "pandas", "numpy", "scipy", "tensorflow", "torch", "polars",
-        "xgboost", "lightgbm", "transformers",
+        "pandas",
+        "numpy",
+        "scipy",
+        "tensorflow",
+        "torch",
+        "polars",
+        "xgboost",
+        "lightgbm",
+        "transformers",
     ];
     for lib in &heavy_libs {
         if code.contains(lib) {
