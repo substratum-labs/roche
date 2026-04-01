@@ -8,7 +8,11 @@ __version__ = "0.1.0"
 from roche_sandbox.client import AsyncRoche, Roche
 from roche_sandbox.decorator import roche_sandbox
 from roche_sandbox.intent import CodeIntent, analyze
-from roche_sandbox.run import RunOptions, RunResult, async_run, run
+from roche_sandbox.run import (
+    ParallelResult, RunOptions, RunResult, Snapshot,
+    async_run, async_run_parallel, async_snapshot, async_restore,
+    run, run_cached, run_parallel, snapshot, restore, delete_snapshot,
+)
 from roche_sandbox.errors import (
     ProviderUnavailable,
     RocheError,
@@ -47,6 +51,16 @@ __all__ = [
     "async_run",
     "RunOptions",
     "RunResult",
+    "ParallelResult",
+    "Snapshot",
+    "run_parallel",
+    "async_run_parallel",
+    "run_cached",
+    "snapshot",
+    "restore",
+    "delete_snapshot",
+    "async_snapshot",
+    "async_restore",
     "CodeIntent",
     "analyze",
     "Budget",

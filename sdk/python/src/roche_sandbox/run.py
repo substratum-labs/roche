@@ -397,3 +397,388 @@ def run(
         print(result.files["output.csv"])
     """
     return asyncio.run(async_run(code, opts, file=file, path=path, entry=entry, **kwargs))
+
+
+# ---------------------------------------------------------------------------
+# Parallel execution
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ParallelResult:
+    """Result from run_parallel(). Contains individual results + summary."""
+
+    results: list[RunResult]
+    """Individual results, same order as input."""
+    total_succeeded: int = 0
+    total_failed: int = 0
+
+
+async def async_run_parallel(
+    tasks: list[dict],
+    *,
+    max_concurrency: int = 5,
+    opts: RunOptions | None = None,
+) -> ParallelResult:
+    """Execute multiple tasks in parallel, each in its own sandbox.
+
+    Args:
+        tasks: List of dicts, each with keys matching run() args
+               (code, file, path, entry, etc.)
+        max_concurrency: Max simultaneous sandboxes.
+        opts: Default RunOptions applied to all tasks (individual task
+              kwargs override).
+
+    Usage::
+
+        results = await async_run_parallel([
+            {"code": "print(1)"},
+            {"code": "print(2)"},
+            {"file": "script.py"},
+            {"path": "./project/", "entry": "main.py"},
+        ])
+    """
+    sem = asyncio.Semaphore(max_concurrency)
+
+    async def _run_one(task: dict) -> RunResult:
+        async with sem:
+            merged = {**(opts.__dict__ if opts else {}), **task}
+            code = merged.pop("code", None)
+            file = merged.pop("file", None)
+            path = merged.pop("path", None)
+            entry = merged.pop("entry", None)
+            try:
+                return await async_run(code, file=file, path=path, entry=entry, **merged)
+            except Exception as e:
+                return RunResult(exit_code=1, stdout="", stderr=str(e))
+
+    results = await asyncio.gather(*[_run_one(t) for t in tasks])
+    succeeded = sum(1 for r in results if r.exit_code == 0)
+    return ParallelResult(
+        results=list(results),
+        total_succeeded=succeeded,
+        total_failed=len(results) - succeeded,
+    )
+
+
+def run_parallel(
+    tasks: list[dict],
+    *,
+    max_concurrency: int = 5,
+    opts: RunOptions | None = None,
+) -> ParallelResult:
+    """Execute multiple tasks in parallel. Sync API.
+
+    Usage::
+
+        from roche_sandbox import run_parallel
+
+        results = run_parallel([
+            {"code": "print(i)"} for i in range(10)
+        ], max_concurrency=5)
+
+        for r in results.results:
+            print(r.stdout, end="")
+    """
+    return asyncio.run(async_run_parallel(tasks, max_concurrency=max_concurrency, opts=opts))
+
+
+# ---------------------------------------------------------------------------
+# Dependency caching
+# ---------------------------------------------------------------------------
+
+# Cache volume name pattern: roche-deps-{lang}-{hash}
+_CACHE_VOLUME_PREFIX = "roche-deps"
+
+
+def _dep_cache_volume(language: str, dep_file_path: str) -> str | None:
+    """Generate a deterministic Docker volume name for dependency caching."""
+    import hashlib
+    p = Path(dep_file_path)
+    if not p.exists():
+        return None
+    content_hash = hashlib.sha256(p.read_bytes()).hexdigest()[:12]
+    return f"{_CACHE_VOLUME_PREFIX}-{language}-{content_hash}"
+
+
+def _dep_cache_mount(language: str) -> str:
+    """Return the container path where deps are cached for a language."""
+    return {
+        "python": "/root/.cache/pip",
+        "node": "/root/.npm",
+    }.get(language, "/root/.cache")
+
+
+async def _ensure_cache_volume(volume_name: str) -> None:
+    """Create a Docker volume if it doesn't exist."""
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "volume", "create", volume_name,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await proc.communicate()
+
+
+async def _run_with_dep_cache(
+    code: str | None = None,
+    *,
+    file: str | None = None,
+    path: str | None = None,
+    entry: str | None = None,
+    opts: RunOptions | None = None,
+    **kwargs,
+) -> RunResult:
+    """Run with dependency caching — pip/npm cache persists across sandboxes.
+
+    Creates a Docker volume keyed by the hash of the dependency file
+    (requirements.txt, package.json). Same deps = same volume = cache hit.
+    """
+    if opts is None:
+        opts = RunOptions(**kwargs)
+    opts.install = True
+
+    # Find the dependency file to hash
+    dep_file = None
+    lang = opts.language
+
+    if path:
+        p = Path(path).resolve()
+        if lang == "auto":
+            lang = _detect_language_from_dir(str(p))
+        for name in _DEP_FILES:
+            if (p / name).exists():
+                dep_file = str(p / name)
+                break
+    elif file:
+        p = Path(file).resolve()
+        if lang == "auto":
+            lang = _detect_language_from_file(str(p))
+        for name in _DEP_FILES:
+            if (p.parent / name).exists():
+                dep_file = str(p.parent / name)
+                break
+
+    if dep_file is None:
+        # No dep file — just run normally
+        return await async_run(code, opts, file=file, path=path, entry=entry)
+
+    volume_name = _dep_cache_volume(lang, dep_file)
+    if volume_name is None:
+        return await async_run(code, opts, file=file, path=path, entry=entry)
+
+    await _ensure_cache_volume(volume_name)
+
+    cache_path = _dep_cache_mount(lang)
+    from roche_sandbox.types import Mount
+    mount = Mount(host_path=volume_name, container_path=cache_path, readonly=False)
+
+    # Inject the cache mount into RunOptions via a custom run
+    # We need to create the sandbox manually with the mount
+    if path:
+        return await _run_project_with_mount(path, entry, opts, mount)
+    elif file:
+        return await _run_file_with_mount(file, opts, mount)
+    else:
+        return await async_run(code, opts, file=file, path=path, entry=entry)
+
+
+async def _run_file_with_mount(file_path: str, opts: RunOptions, mount: object) -> RunResult:
+    """Run a file with a dependency cache mount."""
+    p = Path(file_path).resolve()
+    lang = opts.language if opts.language != "auto" else _detect_language_from_file(str(p))
+
+    code = p.read_text(errors="replace")
+    intent = analyze(code, lang) if opts.auto_infer else CodeIntent(language=lang)
+
+    memory = opts.memory if opts.memory is not None else intent.memory_hint
+    image = _LANGUAGE_CONFIG.get(lang, _LANGUAGE_CONFIG["python"])[0]
+    run_cmd = {"python": ["python3"], "node": ["node"], "bash": ["bash"]}.get(lang, ["python3"])
+
+    client = AsyncRoche(provider=opts.provider or "docker")
+    sandbox = await client.create(
+        image=image,
+        timeout_secs=opts.timeout_secs,
+        network=True,
+        writable=True,
+        memory=memory,
+        mounts=[mount],
+        fs_paths=["/app"],
+    )
+    try:
+        await sandbox.copy_to(str(p), f"/app/{p.name}")
+        await _install_deps_from_dir(sandbox, str(p.parent), lang)
+        result = await sandbox.exec(run_cmd + [f"/app/{p.name}"], timeout_secs=opts.timeout_secs, trace_level=opts.trace_level)
+        files = await _download_files(sandbox, opts.download)
+        return RunResult(exit_code=result.exit_code, stdout=result.stdout, stderr=result.stderr, trace=result.trace, files=files)
+    finally:
+        await sandbox.destroy()
+
+
+async def _run_project_with_mount(dir_path: str, entry: str | None, opts: RunOptions, mount: object) -> RunResult:
+    """Run a project with a dependency cache mount."""
+    p = Path(dir_path).resolve()
+    lang = opts.language if opts.language != "auto" else _detect_language_from_dir(str(p))
+
+    entry_file = entry or _find_entry_point(str(p), lang)
+    if entry_file is None:
+        raise ValueError(f"No entry point found in {dir_path}. Pass entry= explicitly.")
+
+    entry_path = p / entry_file
+    if entry_path.is_file():
+        code = entry_path.read_text(errors="replace")
+        intent = analyze(code, lang) if opts.auto_infer else CodeIntent(language=lang)
+    else:
+        intent = CodeIntent(language=lang)
+
+    memory = opts.memory if opts.memory is not None else intent.memory_hint
+    image = _LANGUAGE_CONFIG.get(lang, _LANGUAGE_CONFIG["python"])[0]
+    run_cmd = {"python": ["python3"], "node": ["node"], "bash": ["bash"]}.get(lang, ["python3"])
+
+    client = AsyncRoche(provider=opts.provider or "docker")
+    sandbox = await client.create(
+        image=image,
+        timeout_secs=max(opts.timeout_secs, 300),
+        network=True,
+        writable=True,
+        memory=memory,
+        mounts=[mount],
+        fs_paths=["/app"],
+    )
+    try:
+        await sandbox.copy_to(str(p), "/app")
+        await _install_deps_from_dir(sandbox, str(p), lang)
+        result = await sandbox.exec(run_cmd + [f"/app/{entry_file}"], timeout_secs=opts.timeout_secs, trace_level=opts.trace_level)
+        files = await _download_files(sandbox, opts.download)
+        return RunResult(exit_code=result.exit_code, stdout=result.stdout, stderr=result.stderr, trace=result.trace, files=files)
+    finally:
+        await sandbox.destroy()
+
+
+def run_cached(
+    code: str | None = None,
+    *,
+    file: str | None = None,
+    path: str | None = None,
+    entry: str | None = None,
+    **kwargs,
+) -> RunResult:
+    """Run with dependency caching. Sync API.
+
+    Usage::
+
+        # First run: installs deps (~30s)
+        result = run_cached(path="./ml-project/")
+
+        # Second run: cache hit (<1s for deps)
+        result = run_cached(path="./ml-project/")
+    """
+    return asyncio.run(_run_with_dep_cache(code, file=file, path=path, entry=entry, **kwargs))
+
+
+# ---------------------------------------------------------------------------
+# Snapshot & Restore
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Snapshot:
+    """A saved sandbox state that can be restored later."""
+
+    snapshot_id: str
+    sandbox_id: str
+    provider: str
+    image: str
+
+
+async def async_snapshot(sandbox_id: str, provider: str = "docker") -> Snapshot:
+    """Save a sandbox's filesystem state as a Docker image.
+
+    The sandbox is committed to a local image. Restore creates a new
+    sandbox from that image — all files and state are preserved.
+
+    Usage::
+
+        # Set up environment
+        sandbox = await roche.create(writable=True)
+        await sandbox.exec(["pip", "install", "numpy", "pandas"])
+        await sandbox.exec(["python3", "-c", "open('/app/config.json','w').write('{}')"])
+
+        # Snapshot
+        snap = await async_snapshot(sandbox.id)
+
+        # Later — restore in <1s (no reinstall needed)
+        result = await async_restore(snap, ["python3", "-c", "import numpy; print(numpy.__version__)"])
+    """
+    snapshot_id = f"roche-snap-{sandbox_id[:12]}"
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "commit", sandbox_id, snapshot_id,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Snapshot failed: {stderr.decode()}")
+
+    return Snapshot(
+        snapshot_id=snapshot_id,
+        sandbox_id=sandbox_id,
+        provider=provider,
+        image=snapshot_id,
+    )
+
+
+async def async_restore(
+    snapshot: Snapshot,
+    command: list[str] | None = None,
+    *,
+    timeout_secs: int = 30,
+    trace_level: str = "summary",
+) -> RunResult:
+    """Restore a sandbox from snapshot and optionally execute a command.
+
+    Creates a new sandbox from the snapshot image. All files and installed
+    packages from the original sandbox are preserved.
+    """
+    client = AsyncRoche(provider=snapshot.provider)
+    sandbox = await client.create(
+        image=snapshot.image,
+        timeout_secs=timeout_secs,
+        writable=True,
+    )
+    try:
+        if command:
+            result = await sandbox.exec(command, timeout_secs=timeout_secs, trace_level=trace_level)
+            return RunResult(
+                exit_code=result.exit_code, stdout=result.stdout,
+                stderr=result.stderr, trace=result.trace,
+            )
+        return RunResult(exit_code=0, stdout=sandbox.id, stderr="")
+    finally:
+        if command:
+            await sandbox.destroy()
+        # If no command, caller owns the sandbox lifecycle
+
+
+async def async_delete_snapshot(snapshot: Snapshot) -> None:
+    """Delete a snapshot image."""
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "rmi", snapshot.snapshot_id,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await proc.communicate()
+
+
+def snapshot(sandbox_id: str, provider: str = "docker") -> Snapshot:
+    """Save sandbox state. Sync API."""
+    return asyncio.run(async_snapshot(sandbox_id, provider))
+
+
+def restore(snapshot: Snapshot, command: list[str] | None = None, **kwargs) -> RunResult:
+    """Restore from snapshot and run. Sync API."""
+    return asyncio.run(async_restore(snapshot, command, **kwargs))
+
+
+def delete_snapshot(snap: Snapshot) -> None:
+    """Delete a snapshot. Sync API."""
+    asyncio.run(async_delete_snapshot(snap))
