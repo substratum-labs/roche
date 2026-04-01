@@ -17,9 +17,12 @@ service SandboxService {
   rpc Gc(GcRequest) returns (GcResponse);
   rpc CopyTo(CopyToRequest) returns (CopyToResponse);
   rpc CopyFrom(CopyFromRequest) returns (CopyFromResponse);
-  rpc PoolStatus(PoolStatusRequest) returns (PoolStatusResponse);
-  rpc PoolWarmup(PoolWarmupRequest) returns (PoolWarmupResponse);
-  rpc PoolDrain(PoolDrainRequest) returns (PoolDrainResponse);
+  rpc ExecStream(ExecStreamRequest) returns (stream ExecEvent);
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc DestroySession(DestroySessionRequest) returns (DestroySessionResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc UpdatePermissions(UpdatePermissionsRequest) returns (UpdatePermissionsResponse);
+  rpc AnalyzeIntent(AnalyzeIntentRequest) returns (AnalyzeIntentResponse);
 }
 
 // CreateRequest configures a new sandbox.
@@ -37,6 +40,8 @@ message CreateRequest {
   repeated MountConfig mounts = 9; // Host directory mounts
   optional string kernel = 10;   // Firecracker only: path to Linux kernel
   optional string rootfs = 11;   // Firecracker only: path to ext4 rootfs
+  repeated string network_allowlist = 12; // Hosts allowed when network=true (empty = unrestricted)
+  repeated string fs_paths = 13;          // Writable filesystem paths (empty = default behavior)
 }
 
 message CreateResponse {
@@ -49,6 +54,9 @@ message ExecRequest {
   repeated string command = 2;
   optional uint64 timeout_secs = 3;
   string provider = 4;
+  TraceLevel trace_level = 5;
+  optional string idempotency_key = 6; // If set, duplicate execs with the same key return cached result
+  optional string session_id = 7;      // If set, exec is budget-checked against this session
 }
 
 // Output from a sandboxed command execution.
@@ -56,6 +64,7 @@ message ExecResponse {
   int32 exit_code = 1;
   string stdout = 2;
   string stderr = 3;
+  ExecutionTrace trace = 4;
 }
 
 // Destroy one or more sandboxes.
@@ -151,26 +160,219 @@ message SandboxInfo {
   optional uint64 expires_at = 5;
 }
 
-// Pool management RPCs
+// Execution trace types
 
-message PoolStatusRequest {}
-message PoolStatusResponse {
-  repeated PoolInfo pools = 1;
+enum TraceLevel {
+  TRACE_LEVEL_OFF = 0;
+  TRACE_LEVEL_SUMMARY = 1;
+  TRACE_LEVEL_STANDARD = 2;
+  TRACE_LEVEL_FULL = 3;
 }
 
-message PoolInfo {
+enum FileOp {
+  FILE_OP_READ = 0;
+  FILE_OP_WRITE = 1;
+  FILE_OP_CREATE = 2;
+  FILE_OP_DELETE = 3;
+}
+
+message ExecutionTrace {
+  double duration_secs = 1;
+  ResourceUsage resource_usage = 2;
+  repeated FileAccess file_accesses = 3;
+  repeated NetworkAttempt network_attempts = 4;
+  repeated BlockedOperation blocked_ops = 5;
+  repeated SyscallEvent syscalls = 6;
+  repeated ResourceSnapshot resource_timeline = 7;
+}
+
+message ResourceUsage {
+  uint64 peak_memory_bytes = 1;
+  double cpu_time_secs = 2;
+  uint64 network_rx_bytes = 3;
+  uint64 network_tx_bytes = 4;
+}
+
+message FileAccess {
+  string path = 1;
+  FileOp op = 2;
+  optional uint64 size_bytes = 3;
+}
+
+message NetworkAttempt {
+  string address = 1;
+  string protocol = 2;
+  bool allowed = 3;
+}
+
+message BlockedOperation {
+  string op_type = 1;
+  string detail = 2;
+}
+
+message SyscallEvent {
+  string name = 1;
+  repeated string args = 2;
+  string result = 3;
+  uint64 timestamp_ms = 4;
+}
+
+message ResourceSnapshot {
+  uint64 timestamp_ms = 1;
+  uint64 memory_bytes = 2;
+  float cpu_percent = 3;
+}
+
+// --- Streaming Exec ---
+
+// Request for server-streaming exec.
+message ExecStreamRequest {
+  string sandbox_id = 1;
+  repeated string command = 2;
+  optional uint64 timeout_secs = 3;
+  string provider = 4;
+  TraceLevel trace_level = 5;
+  optional string idempotency_key = 6;
+  RetryPolicy retry_policy = 7;
+  OutputLimit output_limit = 8;
+}
+
+// A single event in the exec stream.
+message ExecEvent {
+  oneof event {
+    OutputChunk output = 1;     // stdout/stderr data
+    Heartbeat heartbeat = 2;    // periodic liveness signal
+    ExecResult result = 3;      // final result (exit code + trace)
+  }
+}
+
+// A chunk of stdout or stderr output.
+message OutputChunk {
+  string stream = 1;  // "stdout" or "stderr"
+  bytes data = 2;
+}
+
+// Periodic heartbeat with resource snapshot.
+message Heartbeat {
+  uint64 elapsed_ms = 1;
+  ResourceSnapshot resources = 2;
+}
+
+// Final result sent as the last event in the stream.
+message ExecResult {
+  int32 exit_code = 1;
+  ExecutionTrace trace = 2;
+}
+
+// --- Retry & Output Policies ---
+
+// Declarative retry policy for exec.
+message RetryPolicy {
+  uint32 max_attempts = 1;           // Total attempts (1 = no retry). Default: 1.
+  string backoff = 2;                // "none", "linear", "exponential". Default: "none".
+  uint64 initial_delay_ms = 3;       // Initial retry delay in ms. Default: 1000.
+  repeated string retry_on = 4;      // Conditions: "timeout", "oom", "nonzero_exit". Empty = retry on any error.
+}
+
+// Output size limits.
+message OutputLimit {
+  uint64 max_bytes = 1;             // Max combined stdout+stderr bytes. 0 = unlimited.
+  string action = 2;                // "truncate" or "error". Default: "truncate".
+}
+
+// --- Sessions & Budget ---
+
+message Budget {
+  uint32 max_execs = 1;
+  uint64 max_total_secs = 2;
+  uint64 max_output_bytes = 3;
+}
+
+message BudgetUsage {
+  uint32 exec_count = 1;
+  double total_secs = 2;
+  uint64 output_bytes = 3;
+}
+
+message DynamicPermissions {
+  bool network = 1;
+  repeated string network_allowlist = 2;
+  bool writable = 3;
+  repeated string fs_paths = 4;
+}
+
+message SessionInfo {
+  string session_id = 1;
+  string sandbox_id = 2;
+  string provider = 3;
+  DynamicPermissions permissions = 4;
+  Budget budget = 5;
+  BudgetUsage usage = 6;
+  uint64 created_at_ms = 7;
+}
+
+message PermissionChange {
+  oneof change {
+    string allow_host = 1;
+    string deny_host = 2;
+    string allow_path = 3;
+    string deny_path = 4;
+    bool enable_network = 5;
+    bool disable_network = 6;
+  }
+}
+
+message CreateSessionRequest {
+  string sandbox_id = 1;
+  string provider = 2;
+  DynamicPermissions permissions = 3;
+  Budget budget = 4;
+}
+
+message CreateSessionResponse {
+  string session_id = 1;
+}
+
+message DestroySessionRequest {
+  string session_id = 1;
+}
+
+message DestroySessionResponse {
+  SessionInfo session = 1;
+}
+
+message ListSessionsRequest {}
+
+message ListSessionsResponse {
+  repeated SessionInfo sessions = 1;
+}
+
+message UpdatePermissionsRequest {
+  string session_id = 1;
+  PermissionChange change = 2;
+}
+
+message UpdatePermissionsResponse {
+  DynamicPermissions permissions = 1;
+}
+
+// --- Intent Analysis ---
+
+message AnalyzeIntentRequest {
+  string code = 1;
+  string language = 2;
+}
+
+message AnalyzeIntentResponse {
   string provider = 1;
-  string image = 2;
-  uint32 idle_count = 3;
-  uint32 active_count = 4;
-  uint32 max_idle = 5;
-  uint32 max_total = 6;
-}
-
-message PoolWarmupRequest {}
-message PoolWarmupResponse {}
-
-message PoolDrainRequest {}
-message PoolDrainResponse {
-  uint32 destroyed_count = 1;
+  bool needs_network = 2;
+  repeated string network_hosts = 3;
+  bool needs_writable = 4;
+  repeated string writable_paths = 5;
+  bool needs_packages = 6;
+  optional string package_manager = 7;
+  optional string memory_hint = 8;
+  string language = 9;
+  double confidence = 10;
+  repeated string reasoning = 11;
 }

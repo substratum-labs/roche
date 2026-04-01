@@ -372,14 +372,15 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         let provider_name = resolve_provider(&req_provider, &exec_req.command);
 
         // Start trace collector if tracing is enabled
-        let sensor = self.get_sensor(&provider_name);
+        let provider_str = provider_name.as_str();
+        let sensor = self.get_sensor(provider_str);
         let collector = if trace_level != TraceLevel::Off {
             sensor.start_trace(&req.sandbox_id, trace_level).await
         } else {
             None
         };
 
-        with_provider!(self, &provider_name, |p| {
+        with_provider!(self, provider_str, |p| {
             let result = p.exec(&req.sandbox_id, &exec_req).await;
 
             match result {
