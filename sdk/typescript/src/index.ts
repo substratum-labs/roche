@@ -11,6 +11,7 @@ export type {
   ExecOutput,
   SandboxInfo,
   SandboxStatus,
+  PoolInfo,
   Mount,
   Budget,
   BudgetUsage,

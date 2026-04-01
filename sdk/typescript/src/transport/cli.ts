@@ -178,6 +178,18 @@ export class CliTransport implements Transport {
     await this.run(["cp", `${sandboxId}:${sandboxPath}`, hostPath]);
   }
 
+  async poolStatus(): Promise<PoolInfo[]> {
+    throw new UnsupportedOperation("Pool management requires the daemon (roched)");
+  }
+
+  async poolWarmup(): Promise<void> {
+    throw new UnsupportedOperation("Pool management requires the daemon (roched)");
+  }
+
+  async poolDrain(): Promise<number> {
+    throw new UnsupportedOperation("Pool management requires the daemon (roched)");
+  }
+
   async createSession(): Promise<string> {
     throw new UnsupportedOperation("Session management requires the daemon (roched)");
   }

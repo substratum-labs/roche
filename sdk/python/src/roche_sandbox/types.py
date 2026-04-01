@@ -83,6 +83,16 @@ class SandboxInfo:
 
 
 @dataclass
+class PoolInfo:
+    provider: str
+    image: str
+    idle_count: int
+    active_count: int
+    max_idle: int
+    max_total: int
+
+
+@dataclass
 class Budget:
     max_execs: int = 0
     max_total_secs: int = 0

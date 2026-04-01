@@ -14,7 +14,7 @@ from roche_sandbox.trace import (
 from roche_sandbox.intent import CodeIntent
 from roche_sandbox.types import (
     Budget, BudgetUsage, DynamicPermissions, ExecEvent, ExecOutput,
-    SandboxConfig, SandboxInfo, SandboxStatus, SessionInfo,
+    PoolInfo, SandboxConfig, SandboxInfo, SandboxStatus, SessionInfo,
 )
 
 _PROTO_STATUS_MAP: dict[int, SandboxStatus] = {
@@ -210,6 +210,33 @@ class GrpcTransport:
                     yield ExecEvent(type="result", exit_code=event.result.exit_code, trace=trace)
         except Exception as e:
             raise self._map_grpc_error(e)
+
+    async def pool_status(self) -> list[PoolInfo]:
+        from roche_sandbox.generated.roche.v1 import sandbox_pb2
+        try:
+            response = await self._get_stub().PoolStatus(sandbox_pb2.PoolStatusRequest())
+        except Exception as e:
+            raise self._map_grpc_error(e)
+        return [
+            PoolInfo(provider=p.provider, image=p.image, idle_count=p.idle_count,
+                     active_count=p.active_count, max_idle=p.max_idle, max_total=p.max_total)
+            for p in response.pools
+        ]
+
+    async def pool_warmup(self) -> None:
+        from roche_sandbox.generated.roche.v1 import sandbox_pb2
+        try:
+            await self._get_stub().PoolWarmup(sandbox_pb2.PoolWarmupRequest())
+        except Exception as e:
+            raise self._map_grpc_error(e)
+
+    async def pool_drain(self) -> int:
+        from roche_sandbox.generated.roche.v1 import sandbox_pb2
+        try:
+            response = await self._get_stub().PoolDrain(sandbox_pb2.PoolDrainRequest())
+        except Exception as e:
+            raise self._map_grpc_error(e)
+        return response.destroyed_count
 
     async def create_session(self, sandbox_id: str, provider: str, permissions: DynamicPermissions | None = None, budget: Budget | None = None) -> str:
         from roche_sandbox.generated.roche.v1 import sandbox_pb2

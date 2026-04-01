@@ -42,6 +42,15 @@ export interface SandboxInfo {
   expiresAt?: number;
 }
 
+export interface PoolInfo {
+  provider: string;
+  image: string;
+  idleCount: number;
+  activeCount: number;
+  maxIdle: number;
+  maxTotal: number;
+}
+
 export interface Budget {
   maxExecs?: number;
   maxTotalSecs?: number;

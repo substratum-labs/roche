@@ -120,6 +120,15 @@ class CliTransport:
     async def copy_from(self, sandbox_id: str, sandbox_path: str, host_path: str, provider: str) -> None:
         await self._run(["cp", f"{sandbox_id}:{sandbox_path}", host_path])
 
+    async def pool_status(self):
+        raise UnsupportedOperation("Pool management requires the daemon (roched)")
+
+    async def pool_warmup(self):
+        raise UnsupportedOperation("Pool management requires the daemon (roched)")
+
+    async def pool_drain(self):
+        raise UnsupportedOperation("Pool management requires the daemon (roched)")
+
     async def create_session(self, sandbox_id, provider, permissions=None, budget=None):
         raise UnsupportedOperation("Session management requires the daemon (roched)")
 

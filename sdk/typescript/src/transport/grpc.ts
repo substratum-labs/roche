@@ -4,7 +4,7 @@
 import * as grpc from "@grpc/grpc-js";
 import type { Transport } from "./index";
 import type {
-  SandboxConfig, ExecOutput, SandboxInfo, SandboxStatus,
+  SandboxConfig, ExecOutput, SandboxInfo, SandboxStatus, PoolInfo,
   Budget, DynamicPermissions, SessionInfo, PermissionChange, CodeIntent,
 } from "../types";
 import type { TraceLevel } from "../trace";
@@ -138,6 +138,27 @@ export class GrpcTransport implements Transport {
 
   async copyFrom(sandboxId: string, sandboxPath: string, hostPath: string, provider: string): Promise<void> {
     await this.call("copyFrom", { sandboxId, sandboxPath, hostPath, provider });
+  }
+
+  async poolStatus(): Promise<PoolInfo[]> {
+    const response = await this.call("poolStatus", {});
+    return (response.pools ?? []).map((p: any) => ({
+      provider: p.provider,
+      image: p.image,
+      idleCount: p.idleCount ?? 0,
+      activeCount: p.activeCount ?? 0,
+      maxIdle: p.maxIdle ?? 0,
+      maxTotal: p.maxTotal ?? 0,
+    }));
+  }
+
+  async poolWarmup(): Promise<void> {
+    await this.call("poolWarmup", {});
+  }
+
+  async poolDrain(): Promise<number> {
+    const response = await this.call("poolDrain", {});
+    return response.destroyedCount ?? 0;
   }
 
   async createSession(

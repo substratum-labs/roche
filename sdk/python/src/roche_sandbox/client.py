@@ -12,7 +12,7 @@ from roche_sandbox.transport.cli import CliTransport
 from roche_sandbox.transport.grpc import GrpcTransport
 from roche_sandbox.intent import CodeIntent
 from roche_sandbox.types import (
-    Budget, DynamicPermissions, ExecOutput, SandboxConfig, SandboxInfo, SessionInfo,
+    Budget, DynamicPermissions, ExecOutput, PoolInfo, SandboxConfig, SandboxInfo, SessionInfo,
 )
 
 if TYPE_CHECKING:
@@ -113,6 +113,15 @@ class AsyncRoche:
     async def gc(self, dry_run: bool = False, all: bool = False) -> list[str]:
         return await self._transport.gc(self._provider, dry_run, all)
 
+    async def pool_status(self) -> list[PoolInfo]:
+        return await self._transport.pool_status()
+
+    async def pool_warmup(self) -> None:
+        await self._transport.pool_warmup()
+
+    async def pool_drain(self) -> int:
+        return await self._transport.pool_drain()
+
     async def create_session(
         self,
         sandbox_id: str,
@@ -162,6 +171,15 @@ class Roche:
 
     def gc(self, dry_run: bool = False, all: bool = False) -> list[str]:
         return asyncio.run(self._async.gc(dry_run, all))
+
+    def pool_status(self) -> list[PoolInfo]:
+        return asyncio.run(self._async.pool_status())
+
+    def pool_warmup(self) -> None:
+        asyncio.run(self._async.pool_warmup())
+
+    def pool_drain(self) -> int:
+        return asyncio.run(self._async.pool_drain())
 
     def create_session(self, sandbox_id: str, **kwargs) -> str:
         return asyncio.run(self._async.create_session(sandbox_id, **kwargs))

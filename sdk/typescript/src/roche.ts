@@ -7,7 +7,7 @@ import { GrpcTransport } from "./transport/grpc";
 import { detectDaemon } from "./daemon";
 import { Sandbox } from "./sandbox";
 import type {
-  SandboxConfig, ExecOutput, SandboxInfo, Budget, DynamicPermissions,
+  SandboxConfig, ExecOutput, SandboxInfo, PoolInfo, Budget, DynamicPermissions,
   SessionInfo, PermissionChange, CodeIntent,
 } from "./types";
 import type { TraceLevel } from "./trace";
@@ -75,6 +75,21 @@ export class Roche {
   async gc(dryRun?: boolean, all?: boolean): Promise<string[]> {
     const transport = await this.getTransport();
     return transport.gc(this.provider, dryRun, all);
+  }
+
+  async poolStatus(): Promise<PoolInfo[]> {
+    const transport = await this.getTransport();
+    return transport.poolStatus();
+  }
+
+  async poolWarmup(): Promise<void> {
+    const transport = await this.getTransport();
+    await transport.poolWarmup();
+  }
+
+  async poolDrain(): Promise<number> {
+    const transport = await this.getTransport();
+    return transport.poolDrain();
   }
 
   async createSession(

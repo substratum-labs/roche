@@ -2,7 +2,7 @@
 // Copyright 2025 Substratum Labs
 
 import type {
-  SandboxConfig, ExecOutput, SandboxInfo, Budget, DynamicPermissions,
+  SandboxConfig, ExecOutput, SandboxInfo, PoolInfo, Budget, DynamicPermissions,
   SessionInfo, PermissionChange, CodeIntent,
 } from "../types";
 import type { TraceLevel } from "../trace";
@@ -42,6 +42,9 @@ export interface Transport {
     hostPath: string,
     provider: string
   ): Promise<void>;
+  poolStatus(): Promise<PoolInfo[]>;
+  poolWarmup(): Promise<void>;
+  poolDrain(): Promise<number>;
   createSession(
     sandboxId: string,
     provider: string,

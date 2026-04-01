@@ -20,7 +20,7 @@ from roche_sandbox.errors import (
 from roche_sandbox.sandbox import AsyncSandbox, Sandbox
 from roche_sandbox.types import (
     Budget, BudgetUsage, DynamicPermissions, ExecEvent, ExecOutput, Mount,
-    OutputLimit, RetryPolicy, SandboxConfig, SandboxInfo, SandboxStatus, SessionInfo,
+    OutputLimit, PoolInfo, RetryPolicy, SandboxConfig, SandboxInfo, SandboxStatus, SessionInfo,
 )
 
 __all__ = [
@@ -51,5 +51,6 @@ __all__ = [
     "Budget",
     "BudgetUsage",
     "DynamicPermissions",
+    "PoolInfo",
     "SessionInfo",
 ]
