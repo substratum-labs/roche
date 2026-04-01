@@ -14,7 +14,7 @@ Named after [Edouard Roche](https://en.wikipedia.org/wiki/%C3%89douard_Roche) �
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
 pip install roche-sandbox
@@ -42,7 +42,7 @@ result = run("print(sum(range(1000)))")
 
 You pass code. Roche reads it, infers that `import requests` needs network access to `api.github.com`, enables just that host, picks Docker (because WASM can't do network), executes in a locked-down container, and returns the result with an execution trace. If the code were pure math, it would route to WASM instead — no container overhead.
 
-## How It Works
+## 💡 How It Works
 
 | What you write | What Roche does |
 |:---|:---|
@@ -55,7 +55,7 @@ Five providers, one API. The intent engine handles selection. Override anything 
 
 ---
 
-## Also Works As
+## 🔧 Also Works As
 
 <details>
 <summary>CLI: create, exec, destroy from the terminal</summary>
@@ -159,7 +159,7 @@ print(result.stdout)  # hello
 
 Works with any framework. Integration examples for [OpenAI Agents](examples/python/openai-agents/), [LangChain](examples/python/langchain/), [CrewAI](examples/python/crewai/), [Anthropic](examples/python/anthropic/), [AutoGen](examples/python/autogen/), [Camel-AI](examples/python/camel/).
 
-## Security Defaults
+## 🔒 Security Defaults
 
 | Setting | Default | Why |
 |:--------|:--------|:----|
@@ -171,7 +171,7 @@ Works with any framework. Integration examples for [OpenAI Agents](examples/pyth
 
 Everything is off by default. Roche's intent engine turns on only what the code needs. Override explicitly with `--network`, `--writable`, or SDK parameters.
 
-## Development
+## 🛠️ Development
 
 ```bash
 cargo build && cargo test && cargo clippy && cargo fmt --check    # Rust
@@ -180,6 +180,6 @@ cd sdk/typescript && npm ci && npm test                           # TypeScript
 cd sdk/go && go test ./... -v                                     # Go
 ```
 
-## License
+## 📄 License
 
 Apache 2.0
