@@ -400,8 +400,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
 
                     // Record usage for session-bound execs
                     if let Some(ref sid) = session_id {
-                        let output_bytes =
-                            (response.stdout.len() + response.stderr.len()) as u64;
+                        let output_bytes = (response.stdout.len() + response.stderr.len()) as u64;
                         let duration = response
                             .trace
                             .as_ref()
