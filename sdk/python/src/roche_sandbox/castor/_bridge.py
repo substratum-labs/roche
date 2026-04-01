@@ -15,7 +15,9 @@ from roche_sandbox.castor._tools import (
     make_execute_code_tool,
     make_execute_code_stream_tool,
     make_execute_shell_tool,
+    make_workspace_exec_tool,
 )
+from roche_sandbox.castor._workspace import Workspace, WorkspaceManager
 from roche_sandbox.castor._types import (
     EscalationPolicy,
     IntentCheckResult,
@@ -98,6 +100,7 @@ class RocheCastorBridge:
         self._tracker = ViolationTracker(escalation_policy or EscalationPolicy())
         self._intent_pre_check = intent_pre_check
         self._stream_policy = stream_policy
+        self._workspace_mgr = WorkspaceManager(provider=provider)
 
         self._execute_code = make_execute_code_tool(
             default_trace_level=default_trace_level,
@@ -116,10 +119,17 @@ class RocheCastorBridge:
             stream_policy=stream_policy,
         )
 
+        self._execute_in_workspace = make_workspace_exec_tool(
+            workspace_manager=self._workspace_mgr,
+            default_trace_level=default_trace_level,
+            cost_per_use=compute_cost,
+        )
+
         # Wrap tools to intercept results for violation tracking
         self._execute_code = self._wrap_with_tracking(self._execute_code)
         self._execute_shell = self._wrap_with_tracking(self._execute_shell)
         self._execute_code_stream = self._wrap_with_tracking(self._execute_code_stream)
+        self._execute_in_workspace = self._wrap_with_tracking(self._execute_in_workspace)
 
     def _wrap_with_tracking(self, tool_fn: Callable) -> Callable:
         """Wrap a tool function to intercept results for violation tracking."""
@@ -147,7 +157,7 @@ class RocheCastorBridge:
             bridge = RocheCastorBridge()
             kernel = Castor(tools=bridge.tools + other_tools)
         """
-        tools: list[Callable] = [self._execute_code, self._execute_shell, self._execute_code_stream]
+        tools: list[Callable] = [self._execute_code, self._execute_shell, self._execute_code_stream, self._execute_in_workspace]
         if self._intent_pre_check:
             tools.append(self._check_intent_tool)
         return tools
@@ -177,6 +187,24 @@ class RocheCastorBridge:
             tracker=self._tracker,
             castor_task=castor_task,
         )
+
+    async def workspace(self, **kwargs: Any) -> Workspace:
+        """Create a shared workspace for multi-agent collaboration.
+
+        The workspace is a long-lived sandbox that multiple agents can exec into.
+        Files and state persist between calls. Use as async context manager::
+
+            async with await bridge.workspace(writable=True) as ws:
+                await proxy.syscall("execute_in_workspace",
+                    code="open('/tmp/x','w').write('hello')",
+                    workspace_id=ws.id)
+        """
+        return await self._workspace_mgr.create(**kwargs)
+
+    @property
+    def workspaces(self) -> WorkspaceManager:
+        """Access the workspace manager directly."""
+        return self._workspace_mgr
 
     def check_intent(
         self,

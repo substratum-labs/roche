@@ -34,6 +34,7 @@ from roche_sandbox.castor._bridge import roche_castor, roche_tools
 
 # --- Advanced API ---
 from roche_sandbox.castor._bridge import RocheCastorBridge
+from roche_sandbox.castor._workspace import Workspace, WorkspaceManager
 from roche_sandbox.castor._stream_monitor import StreamEvent, StreamMonitor, StreamPolicy
 from roche_sandbox.castor._types import EscalationPolicy, ExecutionSignals, IntentCheckResult, ViolationRecord
 from roche_sandbox.castor._violations import ViolationTracker
@@ -54,6 +55,8 @@ __all__ = [
     "roche_tools",
     # Advanced API
     "RocheCastorBridge",
+    "Workspace",
+    "WorkspaceManager",
     "StreamMonitor",
     "StreamPolicy",
     "StreamEvent",

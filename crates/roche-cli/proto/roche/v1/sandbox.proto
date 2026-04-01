@@ -337,6 +337,7 @@ message SessionInfo {
   Budget budget = 5;
   BudgetUsage usage = 6;
   uint64 created_at_ms = 7;
+  repeated string agent_pids = 8;  // Multi-agent workspace support
 }
 
 message PermissionChange {

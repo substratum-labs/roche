@@ -69,6 +69,9 @@ pub struct SessionState {
     pub budget: Budget,
     pub usage: BudgetUsage,
     pub created_at_ms: u64,
+    /// Agent PIDs sharing this session (multi-agent workspace support).
+    #[serde(default)]
+    pub agent_pids: Vec<String>,
 }
 
 /// Error from session operations.
@@ -228,6 +231,28 @@ impl SessionManager {
         }
 
         Ok(session.permissions.clone())
+    }
+
+    /// Add an agent PID to a session (multi-agent workspace).
+    pub fn join_session(&self, id: &str, agent_pid: String) -> Result<(), SessionError> {
+        let mut sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get_mut(id)
+            .ok_or_else(|| SessionError::NotFound(id.to_string()))?;
+        if !session.agent_pids.contains(&agent_pid) {
+            session.agent_pids.push(agent_pid);
+        }
+        Ok(())
+    }
+
+    /// Remove an agent PID from a session.
+    pub fn leave_session(&self, id: &str, agent_pid: &str) -> Result<(), SessionError> {
+        let mut sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get_mut(id)
+            .ok_or_else(|| SessionError::NotFound(id.to_string()))?;
+        session.agent_pids.retain(|p| p != agent_pid);
+        Ok(())
     }
 
     /// Destroy a session.

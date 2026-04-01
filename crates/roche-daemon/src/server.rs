@@ -122,6 +122,7 @@ fn session_state_to_proto(s: roche_core::SessionState) -> proto::SessionInfo {
             output_bytes: s.usage.output_bytes,
         }),
         created_at_ms: s.created_at_ms,
+        agent_pids: s.agent_pids,
     }
 }
 
