@@ -58,11 +58,6 @@ _PY_HEAVY_MEMORY = {
     "xgboost", "lightgbm", "transformers",
 }
 
-# Functions/methods that imply filesystem writes
-_PY_WRITE_FUNCS = {
-    "open",  # checked with write mode
-}
-
 _PY_WRITE_METHODS = {
     "write", "writelines", "to_csv", "to_json", "to_parquet",
     "to_excel", "to_pickle", "to_hdf", "save", "savefig",
@@ -74,9 +69,6 @@ _PY_WRITE_CALLS = {
     "shutil.copy", "shutil.move", "shutil.rmtree",
     "pathlib.Path.mkdir", "pathlib.Path.write_text", "pathlib.Path.write_bytes",
 }
-
-# Modules that imply subprocess/shell execution
-_PY_SUBPROCESS_MODULES = {"subprocess", "os"}
 
 _PY_SUBPROCESS_FUNCS = {
     "subprocess.run", "subprocess.call", "subprocess.Popen",
@@ -117,21 +109,33 @@ def _analyze_python_ast(intent: CodeIntent, code: str) -> bool:
             intent.reasoning.append(f"Memory 512m: `{top}`")
 
     # --- Calls → filesystem writes, subprocess ---
-    for call_name, args in calls:
-        # open() with write mode
-        if call_name == "open" and len(args) >= 2:
-            mode = args[1]
-            if isinstance(mode, str) and any(c in mode for c in "wax+"):
+    for call_name, args, kwargs_keys in calls:
+        # open() with write mode — check positional arg[1] or keyword 'mode'
+        if call_name == "open":
+            mode = None
+            if len(args) >= 2 and isinstance(args[1], str):
+                mode = args[1]
+            elif "mode" in kwargs_keys:
+                mode = kwargs_keys.get("mode")
+            if mode and isinstance(mode, str) and any(c in mode for c in "wax+"):
                 intent.needs_writable = True
                 intent.reasoning.append(f"FS write: open({args[0]!r}, {mode!r})")
-                if isinstance(args[0], str):
+                if args and isinstance(args[0], str):
                     _add_writable_path(intent, args[0])
 
-        # .write(), .to_csv(), etc.
+        # .to_csv(), .to_json(), etc. — file-oriented write methods
+        # Exclude .write() on its own (could be stdout.write)
         parts = call_name.rsplit(".", 1)
-        if len(parts) == 2 and parts[1] in _PY_WRITE_METHODS:
+        if len(parts) == 2 and parts[1] in _PY_WRITE_METHODS and parts[1] != "write":
             intent.needs_writable = True
             intent.reasoning.append(f"FS write: .{parts[1]}()")
+
+        # .write() — only flag if the object looks like a file variable (not stdout/stderr)
+        if len(parts) == 2 and parts[1] == "write":
+            obj_name = parts[0].rsplit(".", 1)[-1]
+            if obj_name not in ("stdout", "stderr", "sys"):
+                intent.needs_writable = True
+                intent.reasoning.append(f"FS write: {parts[0]}.write()")
 
         # os.makedirs, shutil.copy, etc.
         if call_name in _PY_WRITE_CALLS:
@@ -188,16 +192,16 @@ def _extract_imports(tree: ast.AST) -> set[str]:
     return modules
 
 
-def _extract_calls(tree: ast.AST) -> list[tuple[str, list]]:
-    """Extract function calls with their string/list arguments."""
-    calls: list[tuple[str, list]] = []
+def _extract_calls(tree: ast.AST) -> list[tuple[str, list, dict]]:
+    """Extract function calls with positional + keyword arguments."""
+    calls: list[tuple[str, list, dict]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         name = _call_name(node)
         if name is None:
             continue
-        # Extract constant args for analysis
+        # Extract constant positional args
         args = []
         for arg in node.args:
             if isinstance(arg, ast.Constant) and isinstance(arg.value, (str, int, float)):
@@ -207,7 +211,12 @@ def _extract_calls(tree: ast.AST) -> list[tuple[str, list]]:
                 args.append(elts)
             else:
                 args.append(None)
-        calls.append((name, args))
+        # Extract constant keyword args
+        kwargs: dict[str, object] = {}
+        for kw in node.keywords:
+            if kw.arg and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, (str, int, float)):
+                kwargs[kw.arg] = kw.value.value
+        calls.append((name, args, kwargs))
     return calls
 
 
@@ -347,14 +356,12 @@ def analyze(code: str, language: str = "python") -> CodeIntent:
     """
     intent = CodeIntent(language=language, provider="wasm")
 
-    if language == "python" or language == "auto":
+    if language in ("python", "auto"):
         if _analyze_python_ast(intent, code):
-            # AST succeeded — also do URL extraction from non-Python if auto
-            if language == "auto":
-                _analyze_keyword(intent, code, "auto")
+            pass  # AST handled everything for Python
         else:
             # AST failed (syntax error) — fall back to keywords
-            _analyze_keyword(intent, code, "python")
+            _analyze_keyword(intent, code, language)
             intent.reasoning.append("AST parse failed, fell back to keyword matching")
     else:
         _analyze_keyword(intent, code, language)
