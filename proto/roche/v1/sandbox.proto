@@ -18,6 +18,9 @@ service SandboxService {
   rpc CopyTo(CopyToRequest) returns (CopyToResponse);
   rpc CopyFrom(CopyFromRequest) returns (CopyFromResponse);
   rpc ExecStream(ExecStreamRequest) returns (stream ExecEvent);
+  rpc PoolStatus(PoolStatusRequest) returns (PoolStatusResponse);
+  rpc PoolWarmup(PoolWarmupRequest) returns (PoolWarmupResponse);
+  rpc PoolDrain(PoolDrainRequest) returns (PoolDrainResponse);
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc DestroySession(DestroySessionRequest) returns (DestroySessionResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
@@ -278,6 +281,31 @@ message RetryPolicy {
 message OutputLimit {
   uint64 max_bytes = 1;             // Max combined stdout+stderr bytes. 0 = unlimited.
   string action = 2;                // "truncate" or "error". Default: "truncate".
+}
+
+// --- Pool Management ---
+
+message PoolStatusRequest {}
+
+message PoolStatusResponse {
+  repeated PoolInfo pools = 1;
+}
+
+message PoolInfo {
+  string provider = 1;
+  string image = 2;
+  uint32 idle_count = 3;
+  uint32 active_count = 4;
+  uint32 max_idle = 5;
+  uint32 max_total = 6;
+}
+
+message PoolWarmupRequest {}
+message PoolWarmupResponse {}
+
+message PoolDrainRequest {}
+message PoolDrainResponse {
+  uint32 destroyed_count = 1;
 }
 
 // --- Sessions & Budget ---

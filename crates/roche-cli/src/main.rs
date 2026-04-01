@@ -405,6 +405,8 @@ async fn run_via_grpc(
                         mounts: mount_configs.clone(),
                         kernel: kernel.clone(),
                         rootfs: rootfs.clone(),
+                        network_allowlist: vec![],
+                        fs_paths: vec![],
                     })
                     .await
                     .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
@@ -422,6 +424,9 @@ async fn run_via_grpc(
                     command: command.clone(),
                     timeout_secs: *timeout,
                     provider: "docker".to_string(),
+                    trace_level: 0,
+                    idempotency_key: None,
+                    session_id: None,
                 })
                 .await
                 .map_err(|s| ProviderError::ExecFailed(s.message().to_string()))?;
