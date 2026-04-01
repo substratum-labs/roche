@@ -6,7 +6,9 @@
 [![npm](https://img.shields.io/npm/v/roche-sandbox)](https://www.npmjs.com/package/roche-sandbox)
 [![Go Reference](https://pkg.go.dev/badge/github.com/substratum-labs/roche/sdk/go.svg)](https://pkg.go.dev/github.com/substratum-labs/roche/sdk/go)
 
-**Run untrusted code safely.** Roche analyzes what the code needs, picks the right sandbox, and enforces minimal permissions. You write `run("print(2+2)")`. Roche figures out the rest.
+> The safest way to let code interact with the world.
+
+Roche analyzes what the code needs, picks the right sandbox, and enforces minimal permissions. You write `run("print(2+2)")`. Roche figures out the rest.
 
 It's not a Docker wrapper. It's an execution engine that reads code intent, selects from five providers (Docker, Firecracker, WASM, E2B, Kubernetes), and opens only what's needed — network hosts, filesystem paths, memory. Everything else stays locked.
 
