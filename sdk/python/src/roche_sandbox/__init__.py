@@ -8,7 +8,7 @@ __version__ = "0.1.0"
 from roche_sandbox.client import AsyncRoche, Roche
 from roche_sandbox.decorator import roche_sandbox
 from roche_sandbox.intent import CodeIntent, analyze
-from roche_sandbox.run import RunOptions, async_run, run
+from roche_sandbox.run import RunOptions, RunResult, async_run, run
 from roche_sandbox.errors import (
     ProviderUnavailable,
     RocheError,
@@ -46,6 +46,7 @@ __all__ = [
     "run",
     "async_run",
     "RunOptions",
+    "RunResult",
     "CodeIntent",
     "analyze",
     "Budget",
