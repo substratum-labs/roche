@@ -86,6 +86,14 @@ fn analyze_network(intent: &mut CodeIntent, code: &str, language: &str) {
                 "from aiohttp",
                 "import socket",
                 "import http.client",
+                "import http.server",
+                "import urllib3",
+                "import ftplib",
+                "import smtplib",
+                "import xmlrpc",
+                "import grpc",
+                "from urllib3",
+                "from grpc",
             ],
         ),
         (
@@ -182,6 +190,13 @@ fn analyze_packages(intent: &mut CodeIntent, code: &str, language: &str) {
                 "import torch",
                 "import matplotlib",
                 "import seaborn",
+                "import polars",
+                "import xgboost",
+                "import lightgbm",
+                "import transformers",
+                "import langchain",
+                "import openai",
+                "import anthropic",
             ],
         ),
         ("node", "npm", &["npm install", "npx ", "require('"]),
@@ -227,12 +242,19 @@ fn analyze_filesystem(intent: &mut CodeIntent, code: &str, language: &str) {
             &[
                 "open(",
                 "with open",
-                ".write(",
                 ".to_csv(",
                 ".to_json(",
                 ".to_parquet(",
+                ".to_excel(",
+                ".to_pickle(",
+                ".savefig(",
                 "os.makedirs(",
                 "os.mkdir(",
+                "os.rename(",
+                "os.remove(",
+                "shutil.copy(",
+                "shutil.move(",
+                "shutil.rmtree(",
                 "pathlib",
             ],
         ),
@@ -268,7 +290,7 @@ fn analyze_filesystem(intent: &mut CodeIntent, code: &str, language: &str) {
 
 fn extract_writable_paths(intent: &mut CodeIntent, code: &str) {
     // Look for common writable paths in string literals
-    let common_paths = ["/tmp", "/output", "/data", "/workspace", "/home"];
+    let common_paths = ["/tmp", "/output", "/data", "/workspace", "/home", "/app"];
     for path in &common_paths {
         if code.contains(path)
             && intent.needs_writable
@@ -286,7 +308,10 @@ fn extract_writable_paths(intent: &mut CodeIntent, code: &str) {
 
 fn analyze_resources(intent: &mut CodeIntent, code: &str, _language: &str) {
     // Data-heavy libraries suggest more memory
-    let heavy_libs = ["pandas", "numpy", "scipy", "tensorflow", "torch", "polars"];
+    let heavy_libs = [
+        "pandas", "numpy", "scipy", "tensorflow", "torch", "polars",
+        "xgboost", "lightgbm", "transformers",
+    ];
     for lib in &heavy_libs {
         if code.contains(lib) {
             intent.memory_hint = Some("512m".to_string());
