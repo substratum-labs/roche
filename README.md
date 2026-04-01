@@ -25,11 +25,17 @@ pip install roche-sandbox
 ```python
 from roche_sandbox import run
 
-# 1. Zero config — auto-selects provider, permissions, everything
+# 1. Inline code — zero config
 result = run("print(2 + 2)")
 print(result.stdout)  # 4
 
-# 2. Network auto-detected from code intent
+# 2. Single file
+result = run(file="script.py")
+
+# 3. Entire project — auto-detects entry point + installs dependencies
+result = run(path="./my-project/")
+
+# 4. Network auto-detected from code intent
 result = run("""
     import requests
     r = requests.get('https://api.github.com')
@@ -37,12 +43,12 @@ result = run("""
 """)
 # Roche analyzed the code → network=True, allowlist=["api.github.com"], provider=Docker
 
-# 3. Pure compute auto-routes to WASM (sub-ms startup)
-result = run("print(sum(range(1000)))")
-# No network, no writes → provider=WASM
+# 5. Get files back from sandbox
+result = run(file="generate.py", download=["/app/output.csv"])
+open("output.csv", "wb").write(result.files["output.csv"])
 ```
 
-You pass code. Roche reads it, infers that `import requests` needs network access to `api.github.com`, enables just that host, picks Docker (because WASM can't do network), executes in a locked-down container, and returns the result with an execution trace. If the code were pure math, it would route to WASM instead — no container overhead.
+You pass code, a file, or a project. Roche reads it, infers what it needs (network hosts, writable paths, memory), picks the right provider, and executes in a locked-down sandbox. For projects, it auto-detects `requirements.txt` / `package.json` and installs dependencies.
 
 ## 💡 How It Works
 
@@ -50,8 +56,9 @@ You pass code. Roche reads it, infers that `import requests` needs network acces
 |:---|:---|
 | `run("print(2+2)")` | WASM, no network, no writes, 30s timeout |
 | `run("import requests; ...")` | Docker, network=api.github.com only, readonly FS |
-| `run("import pandas; df.to_csv('/tmp/out.csv')")` | Docker, writable=/tmp, memory=512m |
-| `run("curl https://example.com")` | Docker, network=example.com, bash |
+| `run(file="train.py")` | Reads file, infers intent, copies into sandbox, executes |
+| `run(path="./project/")` | Finds main.py, detects requirements.txt, installs deps, runs |
+| `run(..., download=["/app/out.csv"])` | Executes, then copies files back from sandbox |
 
 Five providers, one API. The intent engine handles selection. Override anything explicitly when you need to.
 
