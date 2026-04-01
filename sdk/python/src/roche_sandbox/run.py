@@ -6,10 +6,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import shutil
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from roche_sandbox.client import AsyncRoche
@@ -207,7 +208,7 @@ async def _run_code(code: str, opts: RunOptions) -> RunResult:
         await sandbox.destroy()
 
 
-async def _run_file(file_path: str, opts: RunOptions) -> RunResult:
+async def _run_file(file_path: str, opts: RunOptions, extra_mounts: list | None = None) -> RunResult:
     """Copy a single file into sandbox and execute it."""
     p = Path(file_path).resolve()
     if not p.is_file():
@@ -239,6 +240,7 @@ async def _run_file(file_path: str, opts: RunOptions) -> RunResult:
         memory=memory,
         network_allowlist=network_allowlist or [],
         fs_paths=fs_paths or ["/app"],
+        mounts=extra_mounts or [],
     )
     try:
         await sandbox.copy_to(str(p), f"/app/{p.name}")
@@ -261,7 +263,7 @@ async def _run_file(file_path: str, opts: RunOptions) -> RunResult:
         await sandbox.destroy()
 
 
-async def _run_project(dir_path: str, entry: str | None, opts: RunOptions) -> RunResult:
+async def _run_project(dir_path: str, entry: str | None, opts: RunOptions, extra_mounts: list | None = None) -> RunResult:
     """Copy a project directory into sandbox, install deps, and execute."""
     p = Path(dir_path).resolve()
     if not p.is_dir():
@@ -311,6 +313,7 @@ async def _run_project(dir_path: str, entry: str | None, opts: RunOptions) -> Ru
         memory=memory,
         network_allowlist=network_allowlist or [],
         fs_paths=["/app"],
+        mounts=extra_mounts or [],
     )
     try:
         # Copy entire project directory
@@ -442,13 +445,17 @@ async def async_run_parallel(
 
     async def _run_one(task: dict) -> RunResult:
         async with sem:
-            merged = {**(opts.__dict__ if opts else {}), **task}
-            code = merged.pop("code", None)
-            file = merged.pop("file", None)
-            path = merged.pop("path", None)
-            entry = merged.pop("entry", None)
+            task_opts = replace(opts) if opts else RunOptions()
+            # Override opts fields from task dict
+            for k in list(task.keys()):
+                if hasattr(task_opts, k) and k not in ("code", "file", "path", "entry"):
+                    setattr(task_opts, k, task[k])
+            code = task.get("code")
+            file = task.get("file")
+            path = task.get("path")
+            entry = task.get("entry")
             try:
-                return await async_run(code, file=file, path=path, entry=entry, **merged)
+                return await async_run(code, task_opts, file=file, path=path, entry=entry)
             except Exception as e:
                 return RunResult(exit_code=1, stdout="", stderr=str(e))
 
@@ -493,7 +500,6 @@ _CACHE_VOLUME_PREFIX = "roche-deps"
 
 def _dep_cache_volume(language: str, dep_file_path: str) -> str | None:
     """Generate a deterministic Docker volume name for dependency caching."""
-    import hashlib
     p = Path(dep_file_path)
     if not p.exists():
         return None
@@ -535,7 +541,7 @@ async def _run_with_dep_cache(
     """
     if opts is None:
         opts = RunOptions(**kwargs)
-    opts.install = True
+    opts = replace(opts, install=True)
 
     # Find the dependency file to hash
     dep_file = None
@@ -572,86 +578,13 @@ async def _run_with_dep_cache(
     from roche_sandbox.types import Mount
     mount = Mount(host_path=volume_name, container_path=cache_path, readonly=False)
 
-    # Inject the cache mount into RunOptions via a custom run
-    # We need to create the sandbox manually with the mount
+    # Reuse existing _run_file/_run_project with mount injected
     if path:
-        return await _run_project_with_mount(path, entry, opts, mount)
+        return await _run_project(path, entry, opts, extra_mounts=[mount])
     elif file:
-        return await _run_file_with_mount(file, opts, mount)
+        return await _run_file(file, opts, extra_mounts=[mount])
     else:
         return await async_run(code, opts, file=file, path=path, entry=entry)
-
-
-async def _run_file_with_mount(file_path: str, opts: RunOptions, mount: object) -> RunResult:
-    """Run a file with a dependency cache mount."""
-    p = Path(file_path).resolve()
-    lang = opts.language if opts.language != "auto" else _detect_language_from_file(str(p))
-
-    code = p.read_text(errors="replace")
-    intent = analyze(code, lang) if opts.auto_infer else CodeIntent(language=lang)
-
-    memory = opts.memory if opts.memory is not None else intent.memory_hint
-    image = _LANGUAGE_CONFIG.get(lang, _LANGUAGE_CONFIG["python"])[0]
-    run_cmd = {"python": ["python3"], "node": ["node"], "bash": ["bash"]}.get(lang, ["python3"])
-
-    client = AsyncRoche(provider=opts.provider or "docker")
-    sandbox = await client.create(
-        image=image,
-        timeout_secs=opts.timeout_secs,
-        network=True,
-        writable=True,
-        memory=memory,
-        mounts=[mount],
-        fs_paths=["/app"],
-    )
-    try:
-        await sandbox.copy_to(str(p), f"/app/{p.name}")
-        await _install_deps_from_dir(sandbox, str(p.parent), lang)
-        result = await sandbox.exec(run_cmd + [f"/app/{p.name}"], timeout_secs=opts.timeout_secs, trace_level=opts.trace_level)
-        files = await _download_files(sandbox, opts.download)
-        return RunResult(exit_code=result.exit_code, stdout=result.stdout, stderr=result.stderr, trace=result.trace, files=files)
-    finally:
-        await sandbox.destroy()
-
-
-async def _run_project_with_mount(dir_path: str, entry: str | None, opts: RunOptions, mount: object) -> RunResult:
-    """Run a project with a dependency cache mount."""
-    p = Path(dir_path).resolve()
-    lang = opts.language if opts.language != "auto" else _detect_language_from_dir(str(p))
-
-    entry_file = entry or _find_entry_point(str(p), lang)
-    if entry_file is None:
-        raise ValueError(f"No entry point found in {dir_path}. Pass entry= explicitly.")
-
-    entry_path = p / entry_file
-    if entry_path.is_file():
-        code = entry_path.read_text(errors="replace")
-        intent = analyze(code, lang) if opts.auto_infer else CodeIntent(language=lang)
-    else:
-        intent = CodeIntent(language=lang)
-
-    memory = opts.memory if opts.memory is not None else intent.memory_hint
-    image = _LANGUAGE_CONFIG.get(lang, _LANGUAGE_CONFIG["python"])[0]
-    run_cmd = {"python": ["python3"], "node": ["node"], "bash": ["bash"]}.get(lang, ["python3"])
-
-    client = AsyncRoche(provider=opts.provider or "docker")
-    sandbox = await client.create(
-        image=image,
-        timeout_secs=max(opts.timeout_secs, 300),
-        network=True,
-        writable=True,
-        memory=memory,
-        mounts=[mount],
-        fs_paths=["/app"],
-    )
-    try:
-        await sandbox.copy_to(str(p), "/app")
-        await _install_deps_from_dir(sandbox, str(p), lang)
-        result = await sandbox.exec(run_cmd + [f"/app/{entry_file}"], timeout_secs=opts.timeout_secs, trace_level=opts.trace_level)
-        files = await _download_files(sandbox, opts.download)
-        return RunResult(exit_code=result.exit_code, stdout=result.stdout, stderr=result.stderr, trace=result.trace, files=files)
-    finally:
-        await sandbox.destroy()
 
 
 def run_cached(
@@ -709,7 +642,9 @@ async def async_snapshot(sandbox_id: str, provider: str = "docker") -> Snapshot:
         # Later — restore in <1s (no reinstall needed)
         result = await async_restore(snap, ["python3", "-c", "import numpy; print(numpy.__version__)"])
     """
-    snapshot_id = f"roche-snap-{sandbox_id[:12]}"
+    import time
+    ts = int(time.time())
+    snapshot_id = f"roche-snap-{sandbox_id[:12]}-{ts}"
     proc = await asyncio.create_subprocess_exec(
         "docker", "commit", sandbox_id, snapshot_id,
         stdout=asyncio.subprocess.PIPE,
@@ -728,35 +663,34 @@ async def async_snapshot(sandbox_id: str, provider: str = "docker") -> Snapshot:
 
 
 async def async_restore(
-    snapshot: Snapshot,
+    snap: Snapshot,
     command: list[str] | None = None,
     *,
     timeout_secs: int = 30,
     trace_level: str = "summary",
 ) -> RunResult:
-    """Restore a sandbox from snapshot and optionally execute a command.
+    """Restore a sandbox from snapshot and execute a command.
 
-    Creates a new sandbox from the snapshot image. All files and installed
-    packages from the original sandbox are preserved.
+    Creates a new sandbox from the snapshot image, runs the command,
+    and destroys the sandbox. All files and installed packages from
+    the original sandbox are preserved.
     """
-    client = AsyncRoche(provider=snapshot.provider)
+    if not command:
+        raise ValueError("command is required — use Roche.create(image=snap.image) for manual lifecycle")
+    client = AsyncRoche(provider=snap.provider)
     sandbox = await client.create(
-        image=snapshot.image,
+        image=snap.image,
         timeout_secs=timeout_secs,
         writable=True,
     )
     try:
-        if command:
-            result = await sandbox.exec(command, timeout_secs=timeout_secs, trace_level=trace_level)
-            return RunResult(
-                exit_code=result.exit_code, stdout=result.stdout,
-                stderr=result.stderr, trace=result.trace,
-            )
-        return RunResult(exit_code=0, stdout=sandbox.id, stderr="")
+        result = await sandbox.exec(command, timeout_secs=timeout_secs, trace_level=trace_level)
+        return RunResult(
+            exit_code=result.exit_code, stdout=result.stdout,
+            stderr=result.stderr, trace=result.trace,
+        )
     finally:
-        if command:
-            await sandbox.destroy()
-        # If no command, caller owns the sandbox lifecycle
+        await sandbox.destroy()
 
 
 async def async_delete_snapshot(snapshot: Snapshot) -> None:
@@ -774,9 +708,9 @@ def snapshot(sandbox_id: str, provider: str = "docker") -> Snapshot:
     return asyncio.run(async_snapshot(sandbox_id, provider))
 
 
-def restore(snapshot: Snapshot, command: list[str] | None = None, **kwargs) -> RunResult:
+def restore(snap: Snapshot, command: list[str], **kwargs) -> RunResult:
     """Restore from snapshot and run. Sync API."""
-    return asyncio.run(async_restore(snapshot, command, **kwargs))
+    return asyncio.run(async_restore(snap, command, **kwargs))
 
 
 def delete_snapshot(snap: Snapshot) -> None:
