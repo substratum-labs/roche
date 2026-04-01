@@ -159,6 +159,45 @@ print(result.stdout)  # hello
 
 </details>
 
+<details>
+<summary>Warm pool: pre-warmed sandboxes for instant acquisition</summary>
+
+Configure `~/.roche/pool.toml`:
+
+```toml
+[[pool]]
+provider = "docker"
+image = "python:3.12-slim"
+min_idle = 3
+max_idle = 10
+max_total = 20
+idle_timeout_secs = 600
+```
+
+Start the daemon — sandboxes are pre-created and ready:
+
+```bash
+roched --port 50051
+```
+
+```python
+from roche_sandbox import Roche
+
+roche = Roche()
+
+# Instant — picks up a pre-warmed sandbox, no container startup
+sandbox = roche.create(image="python:3.12-slim")
+
+# Monitor pool health
+for pool in roche.pool_status():
+    print(f"{pool.image}: {pool.idle_count} idle, {pool.active_count} active")
+
+roche.pool_warmup()   # trigger refill
+roche.pool_drain()    # destroy all idle sandboxes
+```
+
+</details>
+
 Works with any framework. Integration examples for [OpenAI Agents](examples/python/openai-agents/), [LangChain](examples/python/langchain/), [CrewAI](examples/python/crewai/), [Anthropic](examples/python/anthropic/), [AutoGen](examples/python/autogen/), [Camel-AI](examples/python/camel/).
 
 ## 🔒 Security Defaults
