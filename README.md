@@ -8,34 +8,17 @@
 [![npm](https://img.shields.io/npm/v/roche-sandbox)](https://www.npmjs.com/package/roche-sandbox)
 [![Go Reference](https://pkg.go.dev/badge/github.com/substratum-labs/roche/sdk/go.svg)](https://pkg.go.dev/github.com/substratum-labs/roche/sdk/go)
 
-Roche is a **controlled channel** between AI agents and the world. Not a wall that blocks everything, but a nervous system that controls *how* code interacts with its environment — with the right permissions, the right limits, and real-time feedback.
+Run untrusted code safely. Roche analyzes what the code needs, picks the right sandbox, and enforces the minimal permissions — so you don't have to configure anything.
 
 Named after [Edouard Roche](https://en.wikipedia.org/wiki/%C3%89douard_Roche) — the Roche limit is the inviolable physical boundary for celestial bodies; Roche is the inviolable execution boundary for code.
 
-## Why Roche?
-
-Every AI agent framework independently integrates sandbox providers, creating an N x M complexity problem. Roche reduces this to N+M:
-
-```
-OpenAI Agents ──┐                  ┌── Docker
-LangChain    ───┤                  ├── Firecracker
-CrewAI       ───┤                  ├── WASM
-Anthropic    ───┤── Roche()/SDK ───├── E2B
-AutoGen      ───┤                  ├── Kubernetes
-Camel-AI     ───┘                  └── ...
-```
-
 ## Features
 
-- **One-line execution** — `roche.run("print(2+2)")` with zero config
-- **Intent-based** — analyzes code to auto-select provider and minimal permissions
-- **5 providers** — Docker, Firecracker, WASM, E2B, Kubernetes
-- **3 SDKs** — Python, TypeScript, Go
-- **Streaming exec** — real-time stdout/stderr with heartbeats
-- **Sessions & budgets** — track exec count, time, output across calls
-- **Castor integration** — `Castor(roche=True)` for security-gated agent execution
-- **Multi-agent workspaces** — shared sandbox across agent hierarchy
-- **gRPC daemon** — `roched` for persistent sandbox pooling
+- **One line** — `run("print(2+2)")` — zero config, auto-selects everything
+- **Intent-based permissions** — analyzes code to infer network, filesystem, and resource needs
+- **5 providers** — Docker, Firecracker, WASM, E2B, Kubernetes — one API
+- **Streaming + real-time control** — live stdout/stderr, resource monitoring, mid-execution kill
+- **Sessions** — persistent sandbox state, budget tracking, dynamic permission changes
 
 ## Quick Start
 
@@ -59,45 +42,6 @@ result = run("""
     print(r.status_code)
 """)
 # Auto-inferred: network=True, allowlist=["api.github.com"]
-```
-
-### With Castor (security-gated agents)
-
-```bash
-pip install roche-sandbox[castor]
-```
-
-```python
-from castor import Castor
-
-# One line — Castor gates permissions, Roche executes safely
-kernel = Castor(roche=True, default_budgets={"compute": 10})
-
-async def my_agent(proxy):
-    result = await proxy.syscall("execute_code", code="print('hello')")
-    return result["stdout"]
-
-cp = await kernel.run(my_agent)
-```
-
-### Multi-agent workspace
-
-```python
-from roche_sandbox.castor import RocheCastorBridge
-
-bridge = RocheCastorBridge()
-
-async def coordinator(proxy):
-    # Shared sandbox — files persist between agent calls
-    async with await bridge.workspace(writable=True) as ws:
-        # Researcher writes data
-        await proxy.syscall("execute_in_workspace",
-            code="open('/tmp/data.json','w').write('{\"key\": 42}')",
-            workspace_id=ws.id)
-        # Publisher reads same data
-        result = await proxy.syscall("execute_in_workspace",
-            code="print(open('/tmp/data.json').read())",
-            workspace_id=ws.id)
 ```
 
 ### CLI
@@ -162,40 +106,25 @@ out, _ := sandbox.Exec(ctx, []string{"python3", "-c", "print('Hello!')"})
 fmt.Println(out.Stdout)
 ```
 
-## Agent Framework Integrations
+## Integrations
 
-| Framework | Example | Env Var |
-|-----------|---------|---------|
-| [OpenAI Agents SDK](examples/python/openai-agents/) | Tool + code interpreter | `OPENAI_API_KEY` |
-| [LangChain / LangGraph](examples/python/langchain/) | Tool + stateful retry workflow | `OPENAI_API_KEY` |
-| [CrewAI](examples/python/crewai/) | Task + multi-agent crew | `OPENAI_API_KEY` |
-| [Anthropic API](examples/python/anthropic/) | tool_use + agentic loop | `ANTHROPIC_API_KEY` |
-| [AutoGen](examples/python/autogen/) | Code executor + group chat | `OPENAI_API_KEY` |
-| [Camel-AI](examples/python/camel/) | Toolkit + role-playing | `OPENAI_API_KEY` |
+Works with any framework. Examples included for [OpenAI Agents](examples/python/openai-agents/), [LangChain](examples/python/langchain/), [CrewAI](examples/python/crewai/), [Anthropic](examples/python/anthropic/), [AutoGen](examples/python/autogen/), [Camel-AI](examples/python/camel/).
 
 ## Architecture
 
 ```
-                   ┌─────────────────────────────────────────┐
-                   │              Castor (optional)           │
-                   │     Security kernel: budget, HITL,       │
-                   │     intent gating, violation tracking     │
-                   └──────────────┬──────────────────────────┘
-                                  │
-┌─────────────────────────────────▼──────────────────────────────────┐
-│                           Roche                                    │
-│                                                                    │
-│  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌───────────────┐ │
-│  │  Intent   │  │   Session    │  │ Streaming │  │   Workspace   │ │
-│  │  Engine   │  │   Manager    │  │  Monitor  │  │   Manager     │ │
-│  │          │  │ budget/perms │  │  L3 kill  │  │ multi-agent   │ │
-│  └────┬─────┘  └──────┬───────┘  └─────┬─────┘  └───────┬───────┘ │
-│       │               │                │                 │         │
-│  ┌────▼───────────────▼────────────────▼─────────────────▼──────┐  │
-│  │                     Provider Layer                           │  │
-│  │  Docker │ Firecracker │ WASM │ E2B │ Kubernetes              │  │
-│  └─────────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                          Roche                                │
+│                                                               │
+│  Intent Engine ── Session Manager ── Streaming Monitor        │
+│  (auto-detect     (budget, perms,    (real-time control,      │
+│   permissions)     dynamic adjust)    mid-exec kill)          │
+│                                                               │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │                   Provider Layer                        │  │
+│  │  Docker │ Firecracker │ WASM │ E2B │ Kubernetes         │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 ## Security Defaults
