@@ -59,6 +59,73 @@ b = requests.get('https://cdn.example.com/data.json')
         intent = analyze("import requests", "python")
         assert len(intent.reasoning) > 0
 
+    # --- AST-based analysis tests (v0.6) ---
+
+    def test_ast_ignores_comments(self):
+        """Comments should NOT trigger network detection via AST."""
+        code = "# import requests\nprint('hello')"
+        intent = analyze(code, "python")
+        assert not intent.needs_network
+        assert intent.provider == "wasm"
+
+    def test_ast_open_write_mode(self):
+        """open('x.txt', 'w') should trigger writable."""
+        code = "f = open('x.txt', 'w')\nf.write('data')\nf.close()"
+        intent = analyze(code, "python")
+        assert intent.needs_writable
+
+    def test_ast_open_read_only(self):
+        """open('x.txt', 'r') should NOT trigger writable."""
+        code = "f = open('x.txt', 'r')\ndata = f.read()\nf.close()"
+        intent = analyze(code, "python")
+        assert not intent.needs_writable
+
+    def test_ast_open_keyword_mode(self):
+        """open('x.txt', mode='w') should trigger writable via keyword arg."""
+        code = "f = open('x.txt', mode='w')\nf.write('data')\nf.close()"
+        intent = analyze(code, "python")
+        assert intent.needs_writable
+
+    def test_ast_stdout_write_not_writable(self):
+        """sys.stdout.write() should NOT trigger writable."""
+        code = "import sys\nsys.stdout.write('hello')"
+        intent = analyze(code, "python")
+        assert not intent.needs_writable
+
+    def test_ast_to_csv(self):
+        """df.to_csv('out.csv') should trigger writable."""
+        code = "import pandas as pd\ndf = pd.DataFrame()\ndf.to_csv('out.csv')"
+        intent = analyze(code, "python")
+        assert intent.needs_writable
+
+    def test_ast_subprocess_pip(self):
+        """subprocess.run('pip install x') should trigger needs_packages."""
+        code = "import subprocess\nsubprocess.run('pip install requests', shell=True)"
+        intent = analyze(code, "python")
+        assert intent.needs_packages
+        assert intent.package_manager == "pip"
+
+    def test_ast_fallback_on_syntax_error(self):
+        """Non-Python code should fall back to keyword matching."""
+        code = "pip install pandas"
+        intent = analyze(code, "python")
+        # Keyword fallback should detect 'pip install'
+        assert intent.needs_packages
+        assert any("fell back" in r.lower() or "keyword" in r.lower() for r in intent.reasoning)
+
+    def test_ast_url_in_string(self):
+        """URLs in string literals should be extracted."""
+        code = "url = 'https://api.example.com/data'\nprint(url)"
+        intent = analyze(code, "python")
+        assert intent.needs_network
+        assert "api.example.com" in intent.network_hosts
+
+    def test_ast_heavy_package_memory(self):
+        """import torch should set memory_hint to 512m."""
+        code = "import torch\nx = torch.tensor([1, 2, 3])"
+        intent = analyze(code, "python")
+        assert intent.memory_hint == "512m"
+
 
 if __name__ == "__main__":
     unittest.main()

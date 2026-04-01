@@ -3,6 +3,7 @@ module github.com/substratum-labs/roche/sdk/go
 go 1.24.0
 
 require (
+	golang.org/x/sync v0.15.0
 	google.golang.org/grpc v1.79.2
 	google.golang.org/protobuf v1.36.11
 )

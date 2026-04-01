@@ -3,8 +3,8 @@
 
 export { Roche } from "./roche";
 export type { RocheOptions } from "./roche";
-export { run } from "./run";
-export type { RunOptions } from "./run";
+export { run, runParallel, snapshot, restore, deleteSnapshot } from "./run";
+export type { RunOptions, ParallelTask, ParallelResult, ParallelOptions, Snapshot } from "./run";
 export { Sandbox } from "./sandbox";
 export type {
   SandboxConfig,
