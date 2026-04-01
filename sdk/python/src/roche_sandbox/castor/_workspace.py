@@ -124,11 +124,18 @@ class WorkspaceManager:
             writable=writable,
             fs_paths=fs_paths or [],
         )
-        session_id = await client.create_session(
-            sandbox.id,
-            permissions=permissions,
-            budget=budget,
-        )
+        try:
+            session_id = await client.create_session(
+                sandbox.id,
+                permissions=permissions,
+                budget=budget,
+            )
+        except Exception:
+            try:
+                await client.destroy(sandbox.id)
+            except Exception:
+                pass
+            raise
 
         ws = Workspace(
             id=session_id,
@@ -145,9 +152,10 @@ class WorkspaceManager:
 
     async def destroy(self, workspace_id: str) -> None:
         """Destroy a workspace."""
-        ws = self._workspaces.pop(workspace_id, None)
+        ws = self._workspaces.get(workspace_id)
         if ws:
             await ws.destroy()
+            self._workspaces.pop(workspace_id, None)
 
     async def destroy_all(self) -> None:
         """Destroy all workspaces."""

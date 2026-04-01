@@ -253,7 +253,7 @@ class StreamMonitor:
             self._violations.append(violation)
             if self._tracker:
                 self._tracker.record(ViolationRecord(
-                    timestamp=time.time(),
+                    timestamp=time.monotonic(),
                     tool_name="execute_code_stream",
                     violation_type=violation.split(":")[0],
                     detail=violation,

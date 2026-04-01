@@ -62,4 +62,8 @@ def check_intent_against_capabilities(
 
 def _remaining(cap: Any) -> float:
     """Extract remaining budget from a Castor Capability object."""
-    return cap.max_budget - cap.current_usage
+    if hasattr(cap, "max_budget") and hasattr(cap, "current_usage"):
+        return cap.max_budget - cap.current_usage
+    if isinstance(cap, dict):
+        return cap.get("max_budget", float("inf")) - cap.get("current_usage", 0)
+    return float("inf")

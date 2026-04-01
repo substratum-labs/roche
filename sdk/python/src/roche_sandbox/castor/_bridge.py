@@ -28,12 +28,19 @@ from roche_sandbox.castor._violations import ViolationTracker
 
 def _classify_violation(desc: str) -> str:
     """Classify a violation description string into a violation type."""
-    if desc.startswith("blocked:"):
+    d = desc.lower()
+    if d.startswith("blocked"):
         return "blocked_op"
-    if desc.startswith("unauthorized_network:"):
+    if d.startswith("unauthorized_network"):
         return "unauthorized_network"
-    if desc.startswith("unauthorized_write:"):
+    if d.startswith("unauthorized_write"):
         return "unauthorized_write"
+    if d.startswith("output_limit"):
+        return "output_limit_exceeded"
+    if d.startswith("memory_limit"):
+        return "memory_limit_exceeded"
+    if d.startswith("cpu_limit"):
+        return "cpu_limit_exceeded"
     return "unknown"
 
 
@@ -226,7 +233,7 @@ class RocheCastorBridge:
 
         for v_desc in violations:
             record = ViolationRecord(
-                timestamp=time.time(),
+                timestamp=time.monotonic(),
                 tool_name=result.get("_tool_name", "unknown"),
                 violation_type=_classify_violation(v_desc),
                 detail=v_desc,

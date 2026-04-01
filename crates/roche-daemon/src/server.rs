@@ -138,16 +138,16 @@ fn resolve_provider(explicit: &str, command: &[String]) -> String {
     if !explicit.is_empty() {
         return explicit.to_string();
     }
+    if command.len() < 3 {
+        return "docker".to_string();
+    }
     // Intent-based selection for inline code execution patterns
-    if command.len() >= 3
-        && (command[0] == "python" || command[0] == "python3" || command[0] == "node")
-        && command[1] == "-c"
-    {
-        let language = if command[0].starts_with("python") {
-            "python"
-        } else {
-            "node"
-        };
+    let cmd = &command[0];
+    let is_python = cmd == "python" || cmd == "python3" || cmd.starts_with("python3.");
+    let is_node = cmd == "node" || cmd.starts_with("node");
+
+    if (is_python || is_node) && command[1] == "-c" && !command[2].is_empty() {
+        let language = if is_python { "python" } else { "node" };
         let result = intent::analyze(&command[2], language);
         return provider_hint_to_str(&result.provider).to_string();
     }

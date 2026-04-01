@@ -41,7 +41,7 @@ class ViolationTracker:
     def recent_violations(self, window_secs: float | None = None) -> list[ViolationRecord]:
         """Return violations within the sliding window."""
         window = window_secs or self._policy.violation_window_secs
-        cutoff = time.time() - window
+        cutoff = time.monotonic() - window
         return [r for r in self._records if r.timestamp >= cutoff]
 
     @property

@@ -167,14 +167,8 @@ def make_execute_code_stream_tool(
                 trace_level=default_trace_level,
             ):
                 pass  # events flow through the monitor
-        except Exception:
-            try:
-                await sandbox.destroy()
-            except Exception:
-                pass
-            raise
-
-        if not monitor.killed:
+        finally:
+            # Always destroy sandbox — monitor.watch may or may not have killed it
             try:
                 await sandbox.destroy()
             except Exception:
@@ -212,14 +206,25 @@ def make_workspace_exec_tool(
         """
         from roche_sandbox.run import _detect_language, _LANGUAGE_CONFIG
 
+        _empty_signals = {
+            "duration_secs": 0.0, "peak_memory_bytes": 0,
+            "network_hosts": [], "blocked_ops": [], "file_writes": [],
+            "violations": [],
+        }
+        _empty_intent = {"provider": "docker", "needs_network": False, "network_hosts": [], "needs_writable": False}
+
         if mgr is None:
+            s = {**_empty_signals, "violations": ["workspace_manager_unavailable"]}
             return {"exit_code": 1, "stdout": "", "stderr": "No workspace manager configured",
-                    "signals": {"violations": ["no_workspace_manager"]}, "_tool_name": "execute_in_workspace", "_code": code[:200]}
+                    "workspace_id": workspace_id, "signals": s, "intent": _empty_intent,
+                    "_tool_name": "execute_in_workspace", "_code": code[:200]}
 
         ws = mgr.get(workspace_id)
         if ws is None:
+            s = {**_empty_signals, "violations": [f"workspace_not_found:{workspace_id}"]}
             return {"exit_code": 1, "stdout": "", "stderr": f"Workspace not found: {workspace_id}",
-                    "signals": {"violations": [f"workspace_not_found:{workspace_id}"]}, "_tool_name": "execute_in_workspace", "_code": code[:200]}
+                    "workspace_id": workspace_id, "signals": s, "intent": _empty_intent,
+                    "_tool_name": "execute_in_workspace", "_code": code[:200]}
 
         lang = language if language != "auto" else _detect_language(code)
         _, cmd_builder = _LANGUAGE_CONFIG.get(lang, _LANGUAGE_CONFIG["python"])
