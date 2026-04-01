@@ -75,6 +75,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
       - run: cd sdk/go && bash scripts/proto-gen.sh
+      - run: cd sdk/go && go mod tidy
       - run: cd sdk/go && go build ./...
       - run: cd sdk/go && go vet ./...
       - run: cd sdk/go && go test ./... -v
