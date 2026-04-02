@@ -62,6 +62,42 @@ You pass code, a file, or a project. Roche reads it, infers what it needs (netwo
 
 Five providers, one API. The intent engine handles selection. Override anything explicitly when you need to.
 
+## ⚡ Performance
+
+Sandbox overhead depends on what you need. Pure compute routes to WASM (sub-millisecond). Docker sandboxes take longer but support full environments.
+
+| Operation | Latency | Notes |
+|:---|---:|:---|
+| Intent analysis | **< 0.1 ms** | Python AST parse, no I/O |
+| WASM exec | **< 1 ms** | In-process, no container |
+| Docker exec (warm sandbox) | **~150 ms** | Reusing existing container |
+| Docker create + exec + destroy | **~1.5 s** | Full cold start cycle |
+| Warm pool hit | **~5 ms** | Pre-created sandbox, instant acquire |
+
+**WASM vs Docker** — for pure compute, WASM is ~1000x faster:
+
+```
+WASM exec (hello):     0.1 ms
+Docker exec (hello): 150.0 ms
+```
+
+**Cold vs warm** — reusing a sandbox saves ~8x:
+
+```
+Cold (create + exec):  1400 ms
+Warm (exec only):       180 ms
+```
+
+**Scaling** — exec time is dominated by sandbox overhead for small tasks, by computation for large ones:
+
+```
+print("hello"):         ~150 ms  ← sandbox overhead
+sum(range(1M)):         ~190 ms  ← compute negligible
+sum(range(100M)):      ~2500 ms  ← compute dominates
+```
+
+Run benchmarks yourself: `python benchmarks/bench.py` or `cargo run --release -p roche-core --example bench_wasm --features wasmtime`
+
 ---
 
 ## 🔧 Also Works As
