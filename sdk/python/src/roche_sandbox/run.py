@@ -135,35 +135,50 @@ async def async_run(
     file: str | None = None,
     path: str | None = None,
     entry: str | None = None,
+    github: str | None = None,
+    ref: str | None = None,
+    command: str | None = None,
     **kwargs,
 ) -> RunResult:
-    """Execute code, a file, or a project in a sandbox.
+    """Execute code, a file, a project, or a GitHub repo in a sandbox.
 
-    Three modes:
-        result = await async_run("print(2+2)")                  # inline code
-        result = await async_run(file="script.py")              # single file
-        result = await async_run(path="./project/", entry="main.py")  # project dir
+    Modes:
+        result = await async_run("print(2+2)")                       # inline code
+        result = await async_run(file="script.py")                   # single file
+        result = await async_run(path="./project/", entry="main.py") # local project
+        result = await async_run(github="user/repo")                 # GitHub project
 
     Args:
         code: Inline code string.
         file: Path to a single file to execute.
         path: Path to a project directory.
         entry: Entry point file within the project (auto-detected if omitted).
+        github: GitHub repo in "owner/repo" format.
+        ref: Git branch/tag/commit (default: HEAD).
+        command: Explicit run command (e.g. "python train.py --epochs 10").
         opts: RunOptions for fine-grained control.
         **kwargs: Shorthand for RunOptions fields.
     """
     if opts is None:
         opts = RunOptions(**kwargs)
 
+    # GitHub mode — clone then run as project
+    if github is not None:
+        tmp_dir = await _clone_github(github, ref)
+        try:
+            return await _run_project(tmp_dir, entry, opts, command_override=command)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
     # Determine mode
     if file is not None:
         return await _run_file(file, opts)
     elif path is not None:
-        return await _run_project(path, entry, opts)
+        return await _run_project(path, entry, opts, command_override=command)
     elif code is not None:
         return await _run_code(code, opts)
     else:
-        raise ValueError("One of code, file, or path must be provided")
+        raise ValueError("One of code, file, path, or github must be provided")
 
 
 async def _run_code(code: str, opts: RunOptions) -> RunResult:
@@ -263,15 +278,146 @@ async def _run_file(file_path: str, opts: RunOptions, extra_mounts: list | None 
         await sandbox.destroy()
 
 
-async def _run_project(dir_path: str, entry: str | None, opts: RunOptions, extra_mounts: list | None = None) -> RunResult:
-    """Copy a project directory into sandbox, install deps, and execute."""
+async def _clone_github(repo: str, ref: str | None = None) -> str:
+    """Clone a GitHub repo to a temp directory. Returns the path."""
+    tmp_dir = tempfile.mkdtemp(prefix="roche-gh-")
+    url = f"https://github.com/{repo}.git"
+    cmd = ["git", "clone", "--depth", "1"]
+    if ref:
+        cmd += ["--branch", ref]
+    cmd += [url, tmp_dir]
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise RuntimeError(f"git clone failed: {stderr.decode().strip()}")
+    return tmp_dir
+
+
+async def _run_dockerfile(dir_path: str, opts: RunOptions, command_override: str | None = None) -> RunResult:
+    """Build and run a project that has a Dockerfile."""
+    p = Path(dir_path).resolve()
+    image_tag = f"roche-build-{hashlib.sha256(str(p).encode()).hexdigest()[:12]}"
+
+    # docker build
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "build", "-t", image_tag, str(p),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    build_stdout, build_stderr = await proc.communicate()
+    if proc.returncode != 0:
+        return RunResult(
+            exit_code=proc.returncode or 1,
+            stdout=build_stdout.decode(errors="replace"),
+            stderr=build_stderr.decode(errors="replace"),
+        )
+
+    # Run using the built image
+    client = AsyncRoche(provider="docker")
+    run_cmd: list[str] = []
+    if command_override:
+        run_cmd = ["sh", "-c", command_override]
+
+    sandbox = await client.create(
+        image=image_tag,
+        timeout_secs=max(opts.timeout_secs, 300),
+        network=opts.network or False,
+        writable=True,
+    )
+    try:
+        if run_cmd:
+            result = await sandbox.exec(run_cmd, timeout_secs=opts.timeout_secs, trace_level=opts.trace_level)
+        else:
+            # No command — the Dockerfile CMD is the entry point.
+            # Docker containers started by roche use `sleep` as entrypoint,
+            # so we need to extract CMD from the image and run it.
+            inspect_proc = await asyncio.create_subprocess_exec(
+                "docker", "inspect", "--format", '{{join .Config.Cmd " "}}', image_tag,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            cmd_stdout, _ = await inspect_proc.communicate()
+            cmd_str = cmd_stdout.decode().strip()
+            if cmd_str and cmd_str != "<no value>":
+                result = await sandbox.exec(
+                    ["sh", "-c", cmd_str],
+                    timeout_secs=opts.timeout_secs,
+                    trace_level=opts.trace_level,
+                )
+            else:
+                result = await sandbox.exec(
+                    ["echo", "No CMD found in Dockerfile"],
+                    timeout_secs=opts.timeout_secs,
+                )
+        files = await _download_files(sandbox, opts.download)
+        return RunResult(
+            exit_code=result.exit_code, stdout=result.stdout, stderr=result.stderr,
+            trace=result.trace, files=files,
+        )
+    finally:
+        await sandbox.destroy()
+        # Clean up built image
+        await asyncio.create_subprocess_exec(
+            "docker", "rmi", image_tag,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+
+
+async def _run_project(
+    dir_path: str,
+    entry: str | None,
+    opts: RunOptions,
+    extra_mounts: list | None = None,
+    command_override: str | None = None,
+) -> RunResult:
+    """Run a project directory. Detects Dockerfile first, then falls back to copy+exec."""
     p = Path(dir_path).resolve()
     if not p.is_dir():
         raise NotADirectoryError(f"Directory not found: {dir_path}")
 
+    # Dockerfile detected — build and run
+    if (p / "Dockerfile").exists() and entry is None:
+        return await _run_dockerfile(str(p), opts, command_override)
+
     lang = opts.language
     if lang == "auto":
         lang = _detect_language_from_dir(str(p))
+
+    # Explicit command override
+    if command_override:
+        client = AsyncRoche(provider=opts.provider or "docker")
+        image = _LANGUAGE_CONFIG.get(lang, _LANGUAGE_CONFIG["python"])[0]
+        sandbox = await client.create(
+            image=image,
+            timeout_secs=max(opts.timeout_secs, 300),
+            network=True,
+            writable=True,
+            memory=opts.memory,
+            mounts=extra_mounts or [],
+        )
+        try:
+            await sandbox.copy_to(str(p), "/app")
+            if opts.install or _has_dep_file(str(p)):
+                await _install_deps_from_dir(sandbox, str(p), lang)
+            result = await sandbox.exec(
+                ["sh", "-c", f"cd /app && {command_override}"],
+                timeout_secs=opts.timeout_secs,
+                trace_level=opts.trace_level,
+            )
+            files = await _download_files(sandbox, opts.download)
+            return RunResult(
+                exit_code=result.exit_code, stdout=result.stdout, stderr=result.stderr,
+                trace=result.trace, files=files,
+            )
+        finally:
+            await sandbox.destroy()
 
     # Find entry point
     entry_file = entry or _find_entry_point(str(p), lang)
@@ -307,7 +453,7 @@ async def _run_project(dir_path: str, entry: str | None, opts: RunOptions, extra
     client = AsyncRoche(provider=opts.provider or "docker")
     sandbox = await client.create(
         image=image,
-        timeout_secs=max(opts.timeout_secs, 300),  # projects need more time
+        timeout_secs=max(opts.timeout_secs, 300),
         network=network or bool(network_allowlist),
         writable=True,
         memory=memory,
@@ -316,10 +462,8 @@ async def _run_project(dir_path: str, entry: str | None, opts: RunOptions, extra
         mounts=extra_mounts or [],
     )
     try:
-        # Copy entire project directory
         await sandbox.copy_to(str(p), "/app")
 
-        # Install dependencies
         if needs_install:
             await _install_deps_from_dir(sandbox, str(p), lang)
 
@@ -378,9 +522,12 @@ def run(
     file: str | None = None,
     path: str | None = None,
     entry: str | None = None,
+    github: str | None = None,
+    ref: str | None = None,
+    command: str | None = None,
     **kwargs,
 ) -> RunResult:
-    """Execute code, a file, or a project in a sandbox. Sync API.
+    """Execute code, a file, a project, or a GitHub repo in a sandbox. Sync API.
 
     Usage::
 
@@ -395,11 +542,16 @@ def run(
         # Project directory
         result = run(path="./my-project/", entry="main.py")
 
-        # With dependency install + file download
-        result = run(path="./ml-pipeline/", install=True, download=["/app/output.csv"])
-        print(result.files["output.csv"])
+        # GitHub repo (auto-detects Dockerfile)
+        result = run(github="user/repo")
+
+        # GitHub repo with explicit command
+        result = run(github="user/repo", command="python train.py --epochs 10")
     """
-    return asyncio.run(async_run(code, opts, file=file, path=path, entry=entry, **kwargs))
+    return asyncio.run(async_run(
+        code, opts, file=file, path=path, entry=entry,
+        github=github, ref=ref, command=command, **kwargs,
+    ))
 
 
 # ---------------------------------------------------------------------------
