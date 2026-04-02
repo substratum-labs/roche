@@ -233,6 +233,124 @@ async def bench_intent_analysis(n: int = 100) -> BenchResult:
     return result
 
 
+async def bench_sandbox_reuse(n: int = 10) -> BenchResult:
+    """Measure repeated exec in same sandbox (no create/destroy overhead)."""
+    from roche_sandbox import AsyncRoche
+
+    result = BenchResult(name=f"sandbox reuse: {n}x exec same sandbox", iterations=n)
+    client = AsyncRoche()
+    sandbox = await client.create(image="python:3.12-slim", timeout_secs=120)
+
+    try:
+        for i in range(n):
+            t0 = time.perf_counter()
+            await sandbox.exec(["python3", "-c", f"print({i})"])
+            result.times_ms.append((time.perf_counter() - t0) * 1000)
+    finally:
+        await sandbox.destroy()
+
+    return result
+
+
+async def bench_output_size() -> list[BenchResult]:
+    """Measure exec latency vs output size (small/medium/large)."""
+    from roche_sandbox import AsyncRoche
+
+    sizes = [
+        ("10 bytes", "print('x' * 10)"),
+        ("1 KB", "print('x' * 1024)"),
+        ("100 KB", "print('x' * 102400)"),
+        ("1 MB", "print('x' * 1048576)"),
+    ]
+
+    results: list[BenchResult] = []
+    client = AsyncRoche()
+    sandbox = await client.create(image="python:3.12-slim", timeout_secs=120)
+
+    try:
+        for label, code in sizes:
+            r = BenchResult(name=f"exec output {label}", iterations=3)
+            for _ in range(3):
+                t0 = time.perf_counter()
+                await sandbox.exec(["python3", "-c", code])
+                r.times_ms.append((time.perf_counter() - t0) * 1000)
+            r.print()
+            results.append(r)
+    finally:
+        await sandbox.destroy()
+
+    return results
+
+
+async def bench_cold_vs_warm() -> list[BenchResult]:
+    """Compare first exec (cold) vs subsequent execs (warm) in same sandbox."""
+    from roche_sandbox import AsyncRoche
+
+    results: list[BenchResult] = []
+    client = AsyncRoche()
+
+    # Cold: create + first exec
+    cold = BenchResult(name="cold: create + first exec", iterations=3)
+    for _ in range(3):
+        t0 = time.perf_counter()
+        sandbox = await client.create(image="python:3.12-slim", timeout_secs=60)
+        await sandbox.exec(["python3", "-c", "print('cold')"])
+        cold.times_ms.append((time.perf_counter() - t0) * 1000)
+        await sandbox.destroy()
+    cold.print()
+    results.append(cold)
+
+    # Warm: exec in existing sandbox
+    sandbox = await client.create(image="python:3.12-slim", timeout_secs=120)
+    # First exec warms up Python
+    await sandbox.exec(["python3", "-c", "pass"])
+
+    warm = BenchResult(name="warm: exec in existing sandbox", iterations=10)
+    for _ in range(10):
+        t0 = time.perf_counter()
+        await sandbox.exec(["python3", "-c", "print('warm')"])
+        warm.times_ms.append((time.perf_counter() - t0) * 1000)
+    warm.print()
+    results.append(warm)
+    await sandbox.destroy()
+
+    # Speedup
+    if cold.mean_ms > 0 and warm.mean_ms > 0:
+        print(f"    speedup: {cold.mean_ms / warm.mean_ms:.1f}x (cold/warm)")
+
+    return results
+
+
+async def bench_compute_complexity() -> list[BenchResult]:
+    """Measure how exec time scales with computation complexity."""
+    from roche_sandbox import AsyncRoche
+
+    tasks = [
+        ("trivial (print)", "print(1)"),
+        ("light (sum 1K)", "print(sum(range(1000)))"),
+        ("medium (sum 1M)", "print(sum(range(1_000_000)))"),
+        ("heavy (sum 100M)", "print(sum(range(100_000_000)))"),
+    ]
+
+    results: list[BenchResult] = []
+    client = AsyncRoche()
+    sandbox = await client.create(image="python:3.12-slim", timeout_secs=120)
+
+    try:
+        for label, code in tasks:
+            r = BenchResult(name=f"compute: {label}", iterations=3)
+            for _ in range(3):
+                t0 = time.perf_counter()
+                await sandbox.exec(["python3", "-c", code])
+                r.times_ms.append((time.perf_counter() - t0) * 1000)
+            r.print()
+            results.append(r)
+    finally:
+        await sandbox.destroy()
+
+    return results
+
+
 async def bench_snapshot_restore(n: int = 3) -> BenchResult:
     """Measure snapshot + restore cycle."""
     from roche_sandbox import AsyncRoche, async_snapshot, async_restore, async_delete_snapshot
@@ -293,6 +411,17 @@ async def run_benchmarks(quick: bool = False) -> list[BenchResult]:
     exec_results = await bench_exec_comparison(n * 2 if not quick else n)
     results.extend(exec_results)
 
+    # Cold vs warm
+    print("\n--- Cold vs Warm ---\n")
+    cw_results = await bench_cold_vs_warm()
+    results.extend(cw_results)
+
+    # Sandbox reuse
+    print("\n--- Sandbox Reuse ---\n")
+    r = await bench_sandbox_reuse(10 if not quick else 5)
+    r.print()
+    results.append(r)
+
     # End-to-end
     print("\n--- End-to-end ---\n")
     r = await bench_run_inline(n)
@@ -300,12 +429,24 @@ async def run_benchmarks(quick: bool = False) -> list[BenchResult]:
     results.append(r)
 
     if not quick:
-        print()
+        # Output size scaling
+        print("\n--- Output Size Scaling ---\n")
+        out_results = await bench_output_size()
+        results.extend(out_results)
+
+        # Compute complexity scaling
+        print("\n--- Compute Complexity ---\n")
+        comp_results = await bench_compute_complexity()
+        results.extend(comp_results)
+
+        # Parallel throughput
+        print("\n--- Parallel Throughput ---\n")
         r = await bench_run_parallel_throughput(10, 5)
         r.print()
         results.append(r)
 
-        print()
+        # Snapshot
+        print("\n--- Snapshot & Restore ---\n")
         r = await bench_snapshot_restore(3)
         r.print()
         results.append(r)
