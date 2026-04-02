@@ -5,7 +5,7 @@ import { execFile } from "child_process";
 import { performance } from "perf_hooks";
 import type { Transport } from "./index";
 import type {
-  SandboxConfig, ExecOutput, SandboxInfo, Budget, DynamicPermissions,
+  SandboxConfig, ExecOutput, SandboxInfo, PoolInfo, Budget, DynamicPermissions,
   SessionInfo, PermissionChange, CodeIntent,
 } from "../types";
 import type { TraceLevel } from "../trace";
