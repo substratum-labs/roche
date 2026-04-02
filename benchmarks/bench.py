@@ -77,20 +77,82 @@ class BenchResult:
 # ---------------------------------------------------------------------------
 
 
-async def bench_sandbox_create_destroy(n: int = 5) -> BenchResult:
+async def bench_sandbox_create_destroy(n: int = 5, provider: str = "docker", image: str = "python:3.12-slim") -> BenchResult:
     """Measure sandbox creation + destruction latency (cold start)."""
     from roche_sandbox import AsyncRoche
 
-    result = BenchResult(name="sandbox_create_destroy (Docker cold)", iterations=n)
-    client = AsyncRoche()
+    result = BenchResult(name=f"create+destroy ({provider}, {image})", iterations=n)
+    client = AsyncRoche(provider=provider)
 
     for _ in range(n):
         t0 = time.perf_counter()
-        sandbox = await client.create(image="python:3.12-slim", timeout_secs=60)
+        sandbox = await client.create(provider=provider, image=image, timeout_secs=60)
         await sandbox.destroy()
         result.times_ms.append((time.perf_counter() - t0) * 1000)
 
     return result
+
+
+async def bench_provider_comparison(n: int = 3) -> list[BenchResult]:
+    """Compare create+destroy latency across available providers."""
+    import shutil
+
+    providers = [
+        ("docker", "python:3.12-slim", lambda: shutil.which("docker") is not None),
+        ("docker", "node:20-slim", lambda: shutil.which("docker") is not None),
+        ("docker", "ubuntu:22.04", lambda: shutil.which("docker") is not None),
+        ("wasm", "python.wasm", lambda: False),  # TODO: detect WASM runtime
+    ]
+
+    results: list[BenchResult] = []
+    for provider, image, check in providers:
+        if not check():
+            r = BenchResult(name=f"create+destroy ({provider}, {image})", iterations=0)
+            r.times_ms = []
+            results.append(r)
+            print(f"  SKIP {provider}/{image} (not available)")
+            continue
+        try:
+            r = await bench_sandbox_create_destroy(n, provider, image)
+            r.print()
+            results.append(r)
+        except Exception as e:
+            print(f"  FAIL {provider}/{image}: {e}")
+            results.append(BenchResult(name=f"create+destroy ({provider}, {image})", iterations=0))
+
+    return results
+
+
+async def bench_exec_comparison(n: int = 5) -> list[BenchResult]:
+    """Compare exec latency across different images/languages."""
+    from roche_sandbox import AsyncRoche
+
+    configs = [
+        ("python:3.12-slim", ["python3", "-c", "print('hello')"], "python"),
+        ("node:20-slim", ["node", "-e", "console.log('hello')"], "node"),
+        ("ubuntu:22.04", ["echo", "hello"], "bash/echo"),
+    ]
+
+    results: list[BenchResult] = []
+    client = AsyncRoche()
+
+    for image, command, label in configs:
+        result = BenchResult(name=f"exec ({label}, {image})", iterations=n)
+        try:
+            sandbox = await client.create(image=image, timeout_secs=120)
+            try:
+                for _ in range(n):
+                    t0 = time.perf_counter()
+                    await sandbox.exec(command)
+                    result.times_ms.append((time.perf_counter() - t0) * 1000)
+            finally:
+                await sandbox.destroy()
+            result.print()
+        except Exception as e:
+            print(f"  FAIL exec ({label}): {e}")
+        results.append(result)
+
+    return results
 
 
 async def bench_exec_hello(n: int = 5) -> BenchResult:
@@ -220,18 +282,19 @@ async def run_benchmarks(quick: bool = False) -> list[BenchResult]:
     r.print()
     results.append(r)
 
-    # Docker-dependent benchmarks
-    print()
+    # Provider comparison — create+destroy across images
+    print("\n--- Provider Comparison: create+destroy ---\n")
     n = 3 if quick else 5
+    provider_results = await bench_provider_comparison(n)
+    results.extend(provider_results)
 
-    r = await bench_sandbox_create_destroy(n)
-    r.print()
-    results.append(r)
+    # Exec comparison — same command, different images
+    print("\n--- Exec Comparison: by language/image ---\n")
+    exec_results = await bench_exec_comparison(n * 2 if not quick else n)
+    results.extend(exec_results)
 
-    r = await bench_exec_hello(n * 2)
-    r.print()
-    results.append(r)
-
+    # End-to-end
+    print("\n--- End-to-end ---\n")
     r = await bench_run_inline(n)
     r.print()
     results.append(r)
