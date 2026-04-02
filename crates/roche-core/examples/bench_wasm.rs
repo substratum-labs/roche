@@ -210,18 +210,9 @@ fn main() {
     let docker_exec = bench_docker_exec(10);
     let docker_mean = docker_exec.iter().sum::<f64>() / docker_exec.len() as f64;
 
-    println!(
-        "  WASM exec mean:   {:>8.2}ms",
-        wasm_mean
-    );
-    println!(
-        "  Docker exec mean: {:>8.2}ms",
-        docker_mean
-    );
-    println!(
-        "  Speedup:          {:>8.1}x",
-        docker_mean / wasm_mean
-    );
+    println!("  WASM exec mean:   {:>8.2}ms", wasm_mean);
+    println!("  Docker exec mean: {:>8.2}ms", docker_mean);
+    println!("  Speedup:          {:>8.1}x", docker_mean / wasm_mean);
 
     // Cleanup
     let _ = std::fs::remove_dir_all(std::env::temp_dir().join("roche-bench"));
