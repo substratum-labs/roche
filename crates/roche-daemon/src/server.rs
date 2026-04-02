@@ -232,10 +232,14 @@ fn trace_to_proto(trace: roche_core::sensor::ExecutionTrace) -> proto::Execution
 
 fn truncate_str(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
-        s.to_string()
-    } else {
-        s[..max_bytes].to_string()
+        return s.to_string();
     }
+    // Find a valid UTF-8 boundary at or before max_bytes
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
 }
 
 fn default_timeout(t: u64) -> u64 {
@@ -460,6 +464,21 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
                     if let Some(c) = collector {
                         c.abort().await;
                     }
+                    // Record interrupted exec in history (exit_code=None)
+                    let record = proto::ExecRecord {
+                        command: log_command,
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: e.to_string(),
+                        timestamp_ms: exec_start_ms,
+                        duration_ms: None,
+                    };
+                    self.exec_log
+                        .lock()
+                        .unwrap()
+                        .entry(log_sandbox_id)
+                        .or_default()
+                        .push(record);
                     Err(provider_error_to_status(e))
                 }
             }
@@ -489,6 +508,7 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
             for id in &targets {
                 if p.destroy(id).await.is_ok() {
                     self.pool_manager.on_destroy(id).await;
+                    self.exec_log.lock().unwrap().remove(id);
                     destroyed.push(id.clone());
                 }
             }
