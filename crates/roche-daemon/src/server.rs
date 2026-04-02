@@ -15,9 +15,10 @@ use roche_core::provider::{ProviderError, SandboxFileOps, SandboxLifecycle, Sand
 use roche_core::sensor::{DockerSensor, SensorDispatch, TraceLevel};
 use roche_core::session::{SessionError, SessionManager};
 use roche_core::types::{self, SandboxStatus};
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -36,6 +37,7 @@ pub struct SandboxServiceImpl {
     none_sensor: SensorDispatch,
     idempotency_cache: IdempotencyCache,
     session_manager: SessionManager,
+    exec_log: Mutex<HashMap<String, Vec<proto::ExecRecord>>>,
 }
 
 impl SandboxServiceImpl {
@@ -58,6 +60,7 @@ impl SandboxServiceImpl {
             none_sensor: SensorDispatch::None,
             idempotency_cache: IdempotencyCache::new(),
             session_manager: SessionManager::new(),
+            exec_log: Mutex::new(HashMap::new()),
         }
     }
 
@@ -227,6 +230,14 @@ fn trace_to_proto(trace: roche_core::sensor::ExecutionTrace) -> proto::Execution
     }
 }
 
+fn truncate_str(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        s.to_string()
+    } else {
+        s[..max_bytes].to_string()
+    }
+}
+
 fn default_timeout(t: u64) -> u64 {
     if t == 0 {
         300
@@ -357,6 +368,8 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         let session_id = req.session_id.clone();
         let req_provider = req.provider.clone();
         let trace_level = TraceLevel::from_proto(req.trace_level);
+        let log_sandbox_id = req.sandbox_id.clone();
+        let log_command = req.command.clone();
 
         // Budget check for session-bound execs
         if let Some(ref sid) = session_id {
@@ -373,6 +386,12 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
         let provider_name = resolve_provider(&req_provider, &exec_req.command);
 
         // Start trace collector if tracing is enabled
+        let exec_start_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let exec_start = Instant::now();
+
         let provider_str = provider_name.as_str();
         let sensor = self.get_sensor(provider_str);
         let collector = if trace_level != TraceLevel::Off {
@@ -417,6 +436,22 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
                     if let Some(key) = idempotency_key {
                         self.idempotency_cache.put(key, response.clone());
                     }
+
+                    // Record exec in history log
+                    let record = proto::ExecRecord {
+                        command: log_command,
+                        exit_code: Some(response.exit_code),
+                        stdout: truncate_str(&response.stdout, 4096),
+                        stderr: truncate_str(&response.stderr, 4096),
+                        timestamp_ms: exec_start_ms,
+                        duration_ms: Some(exec_start.elapsed().as_millis() as u64),
+                    };
+                    self.exec_log
+                        .lock()
+                        .unwrap()
+                        .entry(log_sandbox_id)
+                        .or_default()
+                        .push(record);
 
                     Ok(Response::new(response))
                 }
@@ -753,6 +788,22 @@ impl proto::sandbox_service_server::SandboxService for SandboxServiceImpl {
 
         let stream = ReceiverStream::new(rx);
         Ok(Response::new(Box::pin(stream) as Self::ExecStreamStream))
+    }
+
+    async fn history(
+        &self,
+        request: Request<proto::HistoryRequest>,
+    ) -> Result<Response<proto::HistoryResponse>, Status> {
+        self.touch_last_rpc();
+        let req = request.into_inner();
+        let records = self
+            .exec_log
+            .lock()
+            .unwrap()
+            .get(&req.sandbox_id)
+            .cloned()
+            .unwrap_or_default();
+        Ok(Response::new(proto::HistoryResponse { records }))
     }
 
     async fn create_session(

@@ -120,6 +120,9 @@ class CliTransport:
     async def copy_from(self, sandbox_id: str, sandbox_path: str, host_path: str, provider: str) -> None:
         await self._run(["cp", f"{sandbox_id}:{sandbox_path}", host_path])
 
+    async def history(self, sandbox_id):
+        raise UnsupportedOperation("Execution history requires the daemon (roched)")
+
     async def pool_status(self):
         raise UnsupportedOperation("Pool management requires the daemon (roched)")
 

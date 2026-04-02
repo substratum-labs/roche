@@ -21,6 +21,7 @@ service SandboxService {
   rpc PoolStatus(PoolStatusRequest) returns (PoolStatusResponse);
   rpc PoolWarmup(PoolWarmupRequest) returns (PoolWarmupResponse);
   rpc PoolDrain(PoolDrainRequest) returns (PoolDrainResponse);
+  rpc History(HistoryRequest) returns (HistoryResponse);
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc DestroySession(DestroySessionRequest) returns (DestroySessionResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
@@ -281,6 +282,25 @@ message RetryPolicy {
 message OutputLimit {
   uint64 max_bytes = 1;             // Max combined stdout+stderr bytes. 0 = unlimited.
   string action = 2;                // "truncate" or "error". Default: "truncate".
+}
+
+// --- Execution History ---
+
+message HistoryRequest {
+  string sandbox_id = 1;
+}
+
+message HistoryResponse {
+  repeated ExecRecord records = 1;
+}
+
+message ExecRecord {
+  repeated string command = 1;
+  optional int32 exit_code = 2;      // None if interrupted
+  string stdout = 3;                  // Truncated to 4KB
+  string stderr = 4;                  // Truncated to 4KB
+  uint64 timestamp_ms = 5;
+  optional uint64 duration_ms = 6;    // None if interrupted
 }
 
 // --- Pool Management ---

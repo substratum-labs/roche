@@ -83,6 +83,16 @@ class SandboxInfo:
 
 
 @dataclass
+class ExecRecord:
+    command: list[str]
+    exit_code: int | None
+    stdout: str
+    stderr: str
+    timestamp_ms: int
+    duration_ms: int | None
+
+
+@dataclass
 class PoolInfo:
     provider: str
     image: str

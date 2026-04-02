@@ -13,7 +13,7 @@ from roche_sandbox.trace import (
 )
 from roche_sandbox.intent import CodeIntent
 from roche_sandbox.types import (
-    Budget, BudgetUsage, DynamicPermissions, ExecEvent, ExecOutput,
+    Budget, BudgetUsage, DynamicPermissions, ExecEvent, ExecOutput, ExecRecord,
     PoolInfo, SandboxConfig, SandboxInfo, SandboxStatus, SessionInfo,
 )
 
@@ -210,6 +210,21 @@ class GrpcTransport:
                     yield ExecEvent(type="result", exit_code=event.result.exit_code, trace=trace)
         except Exception as e:
             raise self._map_grpc_error(e)
+
+    async def history(self, sandbox_id: str) -> list[ExecRecord]:
+        from roche_sandbox.generated.roche.v1 import sandbox_pb2
+        try:
+            response = await self._get_stub().History(sandbox_pb2.HistoryRequest(sandbox_id=sandbox_id))
+        except Exception as e:
+            raise self._map_grpc_error(e)
+        return [
+            ExecRecord(
+                command=list(r.command), exit_code=r.exit_code if r.HasField("exit_code") else None,
+                stdout=r.stdout, stderr=r.stderr, timestamp_ms=r.timestamp_ms,
+                duration_ms=r.duration_ms if r.HasField("duration_ms") else None,
+            )
+            for r in response.records
+        ]
 
     async def pool_status(self) -> list[PoolInfo]:
         from roche_sandbox.generated.roche.v1 import sandbox_pb2

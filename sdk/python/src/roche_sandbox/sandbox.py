@@ -7,7 +7,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
-from roche_sandbox.types import ExecEvent, ExecOutput
+from roche_sandbox.types import ExecEvent, ExecOutput, ExecRecord
 
 if TYPE_CHECKING:
     from roche_sandbox.transport import Transport
@@ -49,6 +49,10 @@ class AsyncSandbox:
 
     async def copy_from(self, sandbox_path: str, host_path: str) -> None:
         await self._transport.copy_from(self._id, sandbox_path, host_path, self._provider)
+
+    async def history(self) -> list[ExecRecord]:
+        """Return execution history for this sandbox."""
+        return await self._transport.history(self._id)
 
     async def __aenter__(self) -> AsyncSandbox:
         return self

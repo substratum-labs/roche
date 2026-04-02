@@ -23,7 +23,7 @@ from roche_sandbox.errors import (
 )
 from roche_sandbox.sandbox import AsyncSandbox, Sandbox
 from roche_sandbox.types import (
-    Budget, BudgetUsage, DynamicPermissions, ExecEvent, ExecOutput, Mount,
+    Budget, BudgetUsage, DynamicPermissions, ExecEvent, ExecOutput, ExecRecord, Mount,
     OutputLimit, PoolInfo, RetryPolicy, SandboxConfig, SandboxInfo, SandboxStatus, SessionInfo,
 )
 
@@ -40,6 +40,7 @@ __all__ = [
     "UnsupportedOperation",
     "SandboxConfig",
     "ExecOutput",
+    "ExecRecord",
     "SandboxInfo",
     "SandboxStatus",
     "Mount",
