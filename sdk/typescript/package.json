@@ -1,6 +1,6 @@
 {
   "name": "roche-sandbox",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Universal sandbox orchestrator for AI agents — TypeScript SDK",
   "license": "Apache-2.0",
   "repository": {

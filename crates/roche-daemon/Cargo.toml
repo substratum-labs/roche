@@ -14,7 +14,7 @@ name = "roched"
 path = "src/main.rs"
 
 [dependencies]
-roche-core = { version = "0.5.0", path = "../roche-core", features = ["wasmtime", "e2b", "k8s"] }
+roche-core = { version = "0.6.0", path = "../roche-core", features = ["wasmtime", "e2b", "k8s"] }
 tonic = "0.12"
 prost = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
