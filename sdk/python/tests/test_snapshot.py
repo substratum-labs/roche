@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2025 Substratum Labs
 
+import sys
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -10,6 +11,9 @@ from roche_sandbox.run import (
     async_restore,
     async_snapshot,
 )
+
+# Get the actual module object (not the function re-exported from __init__)
+_run_mod = sys.modules["roche_sandbox.run"]
 
 
 class TestSnapshotDataclass(unittest.TestCase):
@@ -27,7 +31,7 @@ class TestSnapshotDataclass(unittest.TestCase):
 
 
 class TestAsyncSnapshot(unittest.IsolatedAsyncioTestCase):
-    @patch("roche_sandbox.run.asyncio.create_subprocess_exec")
+    @patch("asyncio.create_subprocess_exec")
     async def test_snapshot_calls_docker_commit(self, mock_exec):
         mock_proc = AsyncMock()
         mock_proc.returncode = 0
@@ -49,7 +53,7 @@ class TestAsyncSnapshot(unittest.IsolatedAsyncioTestCase):
         assert snap.provider == "docker"
         assert snap.snapshot_id == snap.image
 
-    @patch("roche_sandbox.run.asyncio.create_subprocess_exec")
+    @patch("asyncio.create_subprocess_exec")
     async def test_snapshot_raises_on_failure(self, mock_exec):
         mock_proc = AsyncMock()
         mock_proc.returncode = 1
@@ -73,31 +77,33 @@ class TestAsyncRestore(unittest.IsolatedAsyncioTestCase):
             await async_restore(snap, command=None)
         assert "command is required" in str(ctx.exception)
 
-    @patch("roche_sandbox.run.AsyncRoche")
-    async def test_restore_creates_sandbox_from_snapshot_image(self, MockClient):
+    async def test_restore_creates_sandbox_from_snapshot_image(self):
+        from unittest.mock import MagicMock
         from roche_sandbox.types import ExecOutput
+        from roche_sandbox.run import RunResult
 
         mock_sandbox = AsyncMock()
         mock_sandbox.exec.return_value = ExecOutput(exit_code=0, stdout="1.24.0\n", stderr="")
         mock_sandbox.destroy = AsyncMock()
 
-        mock_instance = MockClient.return_value
-        mock_instance.create = AsyncMock(return_value=mock_sandbox)
+        MockClient = MagicMock()
+        MockClient.return_value.create = AsyncMock(return_value=mock_sandbox)
 
-        snap = Snapshot(
-            snapshot_id="roche-snap-abc-123",
-            sandbox_id="abc",
-            provider="docker",
-            image="roche-snap-abc-123",
-        )
+        with patch.object(_run_mod, "AsyncRoche", MockClient):
+            snap = Snapshot(
+                snapshot_id="roche-snap-abc-123",
+                sandbox_id="abc",
+                provider="docker",
+                image="roche-snap-abc-123",
+            )
 
-        result = await async_restore(snap, command=["python3", "-c", "import numpy; print(numpy.__version__)"])
+            result = await async_restore(snap, command=["python3", "-c", "import numpy; print(numpy.__version__)"])
 
         assert result.exit_code == 0
         assert result.stdout == "1.24.0\n"
 
         # Verify sandbox was created with the snapshot image
-        create_kwargs = mock_instance.create.call_args[1]
+        create_kwargs = MockClient.return_value.create.call_args[1]
         assert create_kwargs["image"] == "roche-snap-abc-123"
         assert create_kwargs["writable"] is True
 
@@ -105,7 +111,7 @@ class TestAsyncRestore(unittest.IsolatedAsyncioTestCase):
 
 
 class TestAsyncDeleteSnapshot(unittest.IsolatedAsyncioTestCase):
-    @patch("roche_sandbox.run.asyncio.create_subprocess_exec")
+    @patch("asyncio.create_subprocess_exec")
     async def test_delete_calls_docker_rmi(self, mock_exec):
         mock_proc = AsyncMock()
         mock_proc.returncode = 0
