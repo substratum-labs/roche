@@ -68,25 +68,26 @@ Example session:
 
 ## Competitor Comparison
 
-Run the comparison table:
+Run `python examples/llm-code-interpreter/comparison.py` for the full formatted table.
 
-    python examples/llm-code-interpreter/comparison.py
+|                    | Roche     | E2B          | Open Interpreter | OpenAI CI      | Modal        | Daytona      |
+|:-------------------|:---------:|:------------:|:----------------:|:--------------:|:------------:|:------------:|
+| Isolation          | Docker/WASM/Firecracker | Firecracker microVM | **none** | managed VM | gVisor | Docker |
+| Network control    | allowlist | off by default | **full access** | no network | granular | isolated |
+| Intent analysis    | **yes**   | no           | no               | no             | no           | no           |
+| Local / self-host  | **yes**   | cloud only   | local (unsafe)   | cloud only     | cloud only   | both         |
+| Multi-provider     | **yes** (5) | no         | no               | no             | no           | no           |
+| GPU support        | no        | no           | local            | no             | **yes**      | no           |
+| Setup              | 1 line    | 4 lines+key  | 2 lines          | tool param     | 5 lines+key  | 4 lines+key  |
+| Cold start         | ~1s Docker, <1ms WASM | ~150ms | 0 (unsafe) | n/a      | <1s          | ~90ms        |
+| Pricing            | **free**  | ~$0.05/hr    | free (+LLM)      | $0.03/session  | ~$0.14/hr    | ~$0.05/hr    |
+| Open source        | yes       | yes          | yes              | no             | no           | yes          |
 
-|                  | Roche  | E2B    | Open Interpreter | OpenAI CI | Docker DIY |
-|:-----------------|:------:|:------:|:----------------:|:---------:|:----------:|
-| Isolated         | yes    | yes    | **no**           | yes       | yes        |
-| Network control  | yes    | ~      | **no**           | no        | yes        |
-| Intent analysis  | yes    | no     | no               | no        | no         |
-| Local execution  | yes    | no     | yes              | no        | yes        |
-| Multi-provider   | yes    | no     | no               | no        | no         |
-| Custom packages  | yes    | yes    | yes              | limited   | yes        |
-| Open source      | yes    | yes    | yes              | no        | n/a        |
-| Zero config      | yes    | no     | yes              | yes       | no         |
-| Setup lines      | 1      | 3+key  | 2                | 1         | ~20        |
+### Where each wins
 
-**Roche is the only solution that combines isolation + zero config + local execution + intent analysis.**
-
-- **vs E2B**: Roche runs locally, no API key needed, auto-detects permissions
-- **vs Open Interpreter**: Roche actually isolates code — Open Interpreter runs everything on your machine
-- **vs OpenAI Code Interpreter**: Roche is self-hosted, supports any LLM, custom packages
-- **vs Docker DIY**: Roche is one line, not twenty — intent analysis handles config automatically
+- **Roche**: Only option that's isolated + zero config + local + intent-aware. Free. No API key.
+- **E2B**: Market leader for cloud agent sandboxes. Fast cold starts. Production-proven.
+- **Open Interpreter**: Best UX for personal use. Zero friction. Zero security.
+- **OpenAI CI**: Zero setup if you're already using OpenAI. No custom packages.
+- **Modal**: Only option with GPU sandboxes. Best for ML workloads. Most expensive.
+- **Daytona**: Full dev environments (LSP, SSH, VS Code). Self-hostable. Good for coding agents.

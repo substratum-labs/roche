@@ -110,12 +110,13 @@ python examples/llm-code-interpreter/interpreter.py
 
 Without Roche, LLM-generated code runs on your machine with full access. With Roche, network is off, filesystem is readonly, timeout is enforced — and the LLM doesn't know it's sandboxed.
 
-|                  | Roche | E2B | Open Interpreter | OpenAI CI |
-|:-----------------|:-----:|:---:|:----------------:|:---------:|
-| Isolated         | yes   | yes | **no**           | yes       |
-| Intent analysis  | yes   | no  | no               | no        |
-| Local execution  | yes   | no  | yes              | no        |
-| Zero config      | yes   | no  | yes              | yes       |
+|                  | Roche     | E2B       | Open Interpreter | OpenAI CI    | Modal     | Daytona   |
+|:-----------------|:---------:|:---------:|:----------------:|:------------:|:---------:|:---------:|
+| Isolated         | yes       | yes       | **no**           | yes          | yes       | yes       |
+| Intent analysis  | **yes**   | no        | no               | no           | no        | no        |
+| Local / self-host| **yes**   | cloud only| local (unsafe)   | cloud only   | cloud only| both      |
+| Zero config      | **yes**   | no        | yes              | yes          | no        | no        |
+| Cost             | **free**  | ~$0.05/hr | free             | $0.03/session| ~$0.14/hr | ~$0.05/hr |
 
 **[Code Evaluator](examples/code-evaluator/)** — safe code execution API (submit via HTTP, get results back)
 
