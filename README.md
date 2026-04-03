@@ -98,6 +98,35 @@ sum(range(100M)):      ~2500 ms  ← compute dominates
 
 Run benchmarks yourself: `python benchmarks/bench.py` or `cargo run --release -p roche-core --example bench_wasm --features wasmtime`
 
+## 📦 Examples
+
+**[Code Evaluator](examples/code-evaluator/)** — safe code execution API. Submit code via HTTP, get results back.
+
+```bash
+python examples/code-evaluator/server.py          # Start API server
+curl -X POST http://localhost:8000/run \
+  -d '{"code": "print(2 + 2)"}'                   # → {"stdout": "4\n", "exit_code": 0}
+```
+
+```bash
+python examples/code-evaluator/test_cases.py      # Batch-evaluate 8 submissions in parallel
+# → 5/8 passed: correct answers pass, infinite loops timeout, network blocked
+```
+
+**[Data Pipeline](examples/data-pipeline/)** — run data processing scripts safely. Pandas auto-installed, output files returned.
+
+```bash
+python examples/data-pipeline/runner.py examples/data-pipeline/sample_scripts/analyze.py
+# Roche reads the script → detects pandas → installs it → runs → captures output
+```
+
+**[GitHub Tester](examples/github-tester/)** — clone any public repo and test it. CI-as-a-function.
+
+```bash
+python examples/github-tester/tester.py user/repo                          # Dockerfile → build + run
+python examples/github-tester/tester.py user/repo --command "pytest -v"    # explicit test command
+```
+
 ---
 
 ## 🔧 Also Works As
