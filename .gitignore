@@ -52,3 +52,4 @@ sdk/python/src/roche_sandbox/generated/
 *.egg-info/
 build/
 dist/
+CLAUDE.md
