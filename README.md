@@ -100,32 +100,28 @@ Run benchmarks yourself: `python benchmarks/bench.py` or `cargo run --release -p
 
 ## 📦 Examples
 
-**[Code Evaluator](examples/code-evaluator/)** — safe code execution API. Submit code via HTTP, get results back.
+**[LLM Code Interpreter](examples/llm-code-interpreter/)** — AI generates code, Roche executes it safely. The core use case.
 
 ```bash
-python examples/code-evaluator/server.py          # Start API server
-curl -X POST http://localhost:8000/run \
-  -d '{"code": "print(2 + 2)"}'                   # → {"stdout": "4\n", "exit_code": 0}
+python examples/llm-code-interpreter/interpreter.py
+# You: What's the 100th Fibonacci number?
+# → LLM writes code → Roche runs in sandbox → 354224848179261915075
 ```
 
-```bash
-python examples/code-evaluator/test_cases.py      # Batch-evaluate 8 submissions in parallel
-# → 5/8 passed: correct answers pass, infinite loops timeout, network blocked
-```
+Without Roche, LLM-generated code runs on your machine with full access. With Roche, network is off, filesystem is readonly, timeout is enforced — and the LLM doesn't know it's sandboxed.
 
-**[Data Pipeline](examples/data-pipeline/)** — run data processing scripts safely. Pandas auto-installed, output files returned.
+|                  | Roche | E2B | Open Interpreter | OpenAI CI |
+|:-----------------|:-----:|:---:|:----------------:|:---------:|
+| Isolated         | yes   | yes | **no**           | yes       |
+| Intent analysis  | yes   | no  | no               | no        |
+| Local execution  | yes   | no  | yes              | no        |
+| Zero config      | yes   | no  | yes              | yes       |
 
-```bash
-python examples/data-pipeline/runner.py examples/data-pipeline/sample_scripts/analyze.py
-# Roche reads the script → detects pandas → installs it → runs → captures output
-```
+**[Code Evaluator](examples/code-evaluator/)** — safe code execution API (submit via HTTP, get results back)
 
-**[GitHub Tester](examples/github-tester/)** — clone any public repo and test it. CI-as-a-function.
+**[Data Pipeline](examples/data-pipeline/)** — run data processing scripts safely (pandas auto-installed, output files returned)
 
-```bash
-python examples/github-tester/tester.py user/repo                          # Dockerfile → build + run
-python examples/github-tester/tester.py user/repo --command "pytest -v"    # explicit test command
-```
+**[GitHub Tester](examples/github-tester/)** — clone any public repo and test it (Dockerfile auto-detected)
 
 ---
 
