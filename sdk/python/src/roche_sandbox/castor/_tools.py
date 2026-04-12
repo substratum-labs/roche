@@ -14,6 +14,92 @@ from roche_sandbox.castor._stream_monitor import StreamMonitor, StreamPolicy
 from roche_sandbox.client import AsyncRoche
 from roche_sandbox.intent import analyze
 from roche_sandbox.run import RunOptions, async_run
+from roche_sandbox.wallet import (
+    CapabilityWallet, NetworkCap, FilesystemCap, ComputeCap, OutputCap,
+    run_with_wallet, from_castor_capabilities, to_castor_usage, UsageReport,
+)
+
+
+def _get_castor_capabilities() -> dict[str, Any] | None:
+    """Try to get Castor capabilities from the current proxy context."""
+    try:
+        from castor.lib._context import get_proxy
+        proxy = get_proxy()
+        return proxy.checkpoint.capabilities
+    except (RuntimeError, ImportError):
+        return None
+
+
+def _build_wallet(
+    code: str,
+    language: str,
+    timeout_secs: int,
+    provider: str | None,
+) -> CapabilityWallet:
+    """Build a wallet from intent analysis + Castor capabilities (if available)."""
+    intent = analyze(code, language)
+    caps = _get_castor_capabilities()
+
+    if caps:
+        # Inside Castor — translate Castor budgets to wallet
+        wallet = from_castor_capabilities(caps)
+    else:
+        # Standalone — build wallet from intent
+        wallet = CapabilityWallet()
+
+    # Intent analysis enriches the wallet
+    if intent.needs_network:
+        wallet.network.enabled = True
+    if intent.network_hosts:
+        for host in intent.network_hosts:
+            if host not in wallet.network.allowed_hosts:
+                wallet.network.allowed_hosts.append(host)
+    if intent.needs_writable:
+        wallet.filesystem.writable = True
+    if intent.writable_paths:
+        for p in intent.writable_paths:
+            if p not in wallet.filesystem.writable_paths:
+                wallet.filesystem.writable_paths.append(p)
+    if intent.memory_hint:
+        mb = int(intent.memory_hint.rstrip("m"))
+        wallet.compute.max_memory_bytes = max(wallet.compute.max_memory_bytes, mb * 1024 * 1024)
+
+    wallet.compute.max_duration_secs = max(wallet.compute.max_duration_secs, timeout_secs)
+    if provider:
+        wallet.provider = provider
+
+    return wallet
+
+
+def _wallet_result(result: Any, usage: UsageReport, intent: Any, code: str, tool_name: str) -> dict[str, Any]:
+    """Format a standard tool response from wallet execution."""
+    return {
+        "exit_code": result.exit_code,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "signals": {
+            "duration_secs": usage.duration_secs,
+            "peak_memory_bytes": usage.peak_memory_bytes,
+            "network_hosts": usage.network_hosts_contacted,
+            "blocked_ops": [],
+            "file_writes": usage.fs_paths_written,
+            "violations": usage.violations,
+        },
+        "intent": {
+            "provider": intent.provider,
+            "needs_network": intent.needs_network,
+            "network_hosts": intent.network_hosts,
+            "needs_writable": intent.needs_writable,
+        },
+        "usage": {
+            "exec_count": usage.exec_count,
+            "duration_secs": usage.duration_secs,
+            "stdout_bytes": usage.stdout_bytes,
+            "stderr_bytes": usage.stderr_bytes,
+        },
+        "_code": code[:200],
+        "_tool_name": tool_name,
+    }
 
 
 def make_execute_code_tool(
@@ -30,42 +116,15 @@ def make_execute_code_tool(
         language: str = "auto",
         timeout_secs: int = 30,
     ) -> dict[str, Any]:
-        """Execute code in a Roche sandbox with full tracing.
+        """Execute code in a Roche sandbox via Capability Wallet.
 
-        Returns stdout, stderr, exit_code, and execution signals including
-        violations, resource usage, and actual network hosts contacted.
+        Inside Castor: wallet built from Castor capabilities + intent analysis.
+        Standalone: wallet built from intent analysis only.
         """
         intent = analyze(code, language)
-        opts = RunOptions(
-            language=language,
-            timeout_secs=timeout_secs,
-            trace_level=default_trace_level,
-            provider=provider,
-        )
-        result = await async_run(code, opts)
-        signals = extract_signals(result, intent)
-
-        return {
-            "exit_code": result.exit_code,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "signals": {
-                "duration_secs": signals.duration_secs,
-                "peak_memory_bytes": signals.peak_memory_bytes,
-                "network_hosts": signals.network_hosts_contacted,
-                "blocked_ops": signals.blocked_operations,
-                "file_writes": signals.file_writes,
-                "violations": signals.violations,
-            },
-            "intent": {
-                "provider": intent.provider,
-                "needs_network": intent.needs_network,
-                "network_hosts": intent.network_hosts,
-                "needs_writable": intent.needs_writable,
-            },
-            "_code": code[:200],
-            "_tool_name": "execute_code",
-        }
+        wallet = _build_wallet(code, language, timeout_secs, provider)
+        result, usage = await run_with_wallet(wallet, code, language=language)
+        return _wallet_result(result, usage, intent, code, "execute_code")
 
     return execute_code
 
@@ -83,42 +142,14 @@ def make_execute_shell_tool(
         command: str,
         timeout_secs: int = 30,
     ) -> dict[str, Any]:
-        """Execute a shell command in a Roche sandbox.
+        """Execute a shell command in a Roche sandbox via Capability Wallet.
 
         Marked destructive because shell commands have broad capabilities.
-        Returns stdout, stderr, exit_code, and execution signals.
         """
         intent = analyze(command, "bash")
-        opts = RunOptions(
-            language="bash",
-            timeout_secs=timeout_secs,
-            trace_level=default_trace_level,
-            provider=provider,
-        )
-        result = await async_run(command, opts)
-        signals = extract_signals(result, intent)
-
-        return {
-            "exit_code": result.exit_code,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "signals": {
-                "duration_secs": signals.duration_secs,
-                "peak_memory_bytes": signals.peak_memory_bytes,
-                "network_hosts": signals.network_hosts_contacted,
-                "blocked_ops": signals.blocked_operations,
-                "file_writes": signals.file_writes,
-                "violations": signals.violations,
-            },
-            "intent": {
-                "provider": intent.provider,
-                "needs_network": intent.needs_network,
-                "network_hosts": intent.network_hosts,
-                "needs_writable": intent.needs_writable,
-            },
-            "_code": command[:200],
-            "_tool_name": "execute_shell",
-        }
+        wallet = _build_wallet(command, "bash", timeout_secs, provider)
+        result, usage = await run_with_wallet(wallet, command, language="bash")
+        return _wallet_result(result, usage, intent, command, "execute_shell")
 
     return execute_shell
 
