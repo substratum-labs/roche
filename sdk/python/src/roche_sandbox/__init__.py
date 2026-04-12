@@ -8,6 +8,11 @@ __version__ = "0.1.0"
 from roche_sandbox.client import AsyncRoche, Roche
 from roche_sandbox.decorator import roche_sandbox
 from roche_sandbox.intent import CodeIntent, analyze
+from roche_sandbox.wallet import (
+    CapabilityWallet, NetworkCap, FilesystemCap, ComputeCap,
+    SecretsCap, OutputCap, UsageReport, run_with_wallet,
+    from_castor_capabilities, to_castor_usage,
+)
 from roche_sandbox.run import (
     ParallelResult, RunOptions, RunResult, Snapshot,
     async_run, async_run_parallel, async_snapshot, async_restore,
@@ -62,6 +67,16 @@ __all__ = [
     "delete_snapshot",
     "async_snapshot",
     "async_restore",
+    "CapabilityWallet",
+    "NetworkCap",
+    "FilesystemCap",
+    "ComputeCap",
+    "SecretsCap",
+    "OutputCap",
+    "UsageReport",
+    "run_with_wallet",
+    "from_castor_capabilities",
+    "to_castor_usage",
     "CodeIntent",
     "analyze",
     "Budget",
