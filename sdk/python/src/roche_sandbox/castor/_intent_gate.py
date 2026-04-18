@@ -16,15 +16,15 @@ def check_intent_against_capabilities(
     language: str,
     capabilities: dict[str, Any],
 ) -> IntentCheckResult:
-    """Analyze code intent and check if the agent has sufficient Castor capabilities.
+    """Analyze code intent and check if the agent has sufficient Castor budgets.
 
     Castor convention: missing resource = unlimited (no enforcement).
-    So we only flag capabilities that ARE tracked but have insufficient budget.
+    So we only flag resources that ARE tracked but have insufficient budget.
 
     Args:
         code: Source code to analyze.
         language: Language hint ('python', 'node', 'bash', 'auto').
-        capabilities: Castor capability dict (resource_type -> Capability).
+        capabilities: Castor budget dict (resource_type -> Budget object).
     """
     intent = analyze(code, language)
     missing: list[str] = []

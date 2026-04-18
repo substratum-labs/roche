@@ -11,7 +11,7 @@ from roche_sandbox.intent import CodeIntent, analyze
 from roche_sandbox.wallet import (
     CapabilityWallet, NetworkCap, FilesystemCap, ComputeCap,
     SecretsCap, OutputCap, UsageReport, run_with_wallet,
-    from_castor_capabilities, to_castor_usage,
+    from_castor_budgets, from_castor_capabilities, to_castor_usage,
 )
 from roche_sandbox.run import (
     ParallelResult, RunOptions, RunResult, Snapshot,
@@ -75,7 +75,8 @@ __all__ = [
     "OutputCap",
     "UsageReport",
     "run_with_wallet",
-    "from_castor_capabilities",
+    "from_castor_budgets",
+    "from_castor_capabilities",  # backward compat alias
     "to_castor_usage",
     "CodeIntent",
     "analyze",

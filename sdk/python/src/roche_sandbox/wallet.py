@@ -111,12 +111,9 @@ async def run_with_wallet(
     matching the wallet's capabilities, executes the code, and returns a usage
     report showing what was actually consumed.
 
-    This is the formal Castor→Roche protocol:
-      1. Castor translates its budget tokens into a CapabilityWallet
-      2. Passes the wallet to Roche
-      3. Roche creates sandbox matching the wallet
-      4. Roche executes and returns (result, usage_report)
-      5. Castor reads usage_report to update its own budgets
+    The wallet defines what the code is allowed to do. Roche creates a sandbox
+    matching the wallet's constraints, executes the code, and returns a usage
+    report showing what was actually consumed.
     """
     import os
 
@@ -176,29 +173,38 @@ def _bytes_to_memory_str(b: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Castor bridge: Castor Capability → Roche Wallet
+# Castor bridge: Castor Budget → Roche Wallet
 # ---------------------------------------------------------------------------
 
 
-def from_castor_capabilities(
-    capabilities: dict[str, object],
+def from_castor_budgets(
+    budgets: dict[str, object],
     tool_meta: object | None = None,
 ) -> CapabilityWallet:
-    """Translate Castor capability tokens into a Roche CapabilityWallet.
+    """Roche-side helper: derive a partial CapabilityWallet from Castor budget signals.
 
-    This is the formal interface between Castor and Roche:
-    - Castor's "compute" budget → Roche's compute.max_exec_count
-    - Castor's "network" budget → Roche's network.enabled + max_egress_bytes
-    - Castor's "disk"/"filesystem" budget → Roche's filesystem.writable
+    This is NOT a jointly-owned protocol. Castor's Budget API only provides
+    quantitative resource counters (compute / network / disk / api). A real
+    capability wallet also needs allowlists (allowed_hosts, writable_paths)
+    which Castor cannot provide today. Callers must populate those separately
+    (e.g. via intent analysis or explicit configuration).
+
+    The conversion is lossy by design:
+    - "compute" budget → compute.max_exec_count (quantitative, direct)
+    - "network" budget → network.enabled=True (but allowed_hosts stays empty)
+    - "disk"/"filesystem" budget → filesystem.writable=True (but writable_paths stays empty)
+    - "api" budget → network.enabled=True (API calls need network)
+    - "memory" budget → compute.max_memory_bytes (treated as MB)
 
     Args:
-        capabilities: Castor capability dict (resource_type → Capability object).
+        budgets: Castor budget dict (resource_type → Budget object with
+                 max_budget/current_usage fields).
         tool_meta: Optional Castor ToolMetadata for additional hints.
     """
     wallet = CapabilityWallet()
 
-    for resource_type, cap in capabilities.items():
-        remaining = _cap_remaining(cap)
+    for resource_type, budget in budgets.items():
+        remaining = _budget_remaining(budget)
         if remaining <= 0:
             continue
 
@@ -209,19 +215,23 @@ def from_castor_capabilities(
         elif resource_type in ("disk", "filesystem"):
             wallet.filesystem.writable = True
         elif resource_type == "api":
-            # API budget → enable network for API calls
             wallet.network.enabled = True
         elif resource_type == "memory":
-            wallet.compute.max_memory_bytes = int(remaining * 1024 * 1024)  # treat as MB
+            wallet.compute.max_memory_bytes = int(remaining * 1024 * 1024)
 
     return wallet
 
 
+# Keep old name as alias for backward compatibility
+from_castor_capabilities = from_castor_budgets
+
+
 def to_castor_usage(usage: UsageReport) -> dict[str, float]:
-    """Translate a Roche UsageReport back to Castor budget deductions.
+    """Translate a Roche UsageReport into Castor budget deductions.
 
     Returns a dict of {resource_type: amount_to_deduct}.
-    Castor calls cap_mgr.deduct() with these values.
+    The caller (typically the Castor-Roche bridge) uses these values
+    to call budget_mgr.deduct().
     """
     deductions: dict[str, float] = {}
 
@@ -237,10 +247,10 @@ def to_castor_usage(usage: UsageReport) -> dict[str, float]:
     return deductions
 
 
-def _cap_remaining(cap: object) -> float:
-    """Extract remaining budget from a Castor Capability."""
-    if hasattr(cap, "max_budget") and hasattr(cap, "current_usage"):
-        return cap.max_budget - cap.current_usage
-    if isinstance(cap, dict):
-        return cap.get("max_budget", float("inf")) - cap.get("current_usage", 0)
+def _budget_remaining(budget: object) -> float:
+    """Extract remaining budget from a Castor Budget object."""
+    if hasattr(budget, "max_budget") and hasattr(budget, "current_usage"):
+        return budget.max_budget - budget.current_usage
+    if isinstance(budget, dict):
+        return budget.get("max_budget", float("inf")) - budget.get("current_usage", 0)
     return float("inf")

@@ -16,16 +16,16 @@ from roche_sandbox.intent import analyze
 from roche_sandbox.run import RunOptions, async_run
 from roche_sandbox.wallet import (
     CapabilityWallet, NetworkCap, FilesystemCap, ComputeCap, OutputCap,
-    run_with_wallet, from_castor_capabilities, to_castor_usage, UsageReport,
+    run_with_wallet, from_castor_budgets, to_castor_usage, UsageReport,
 )
 
 
-def _get_castor_capabilities() -> dict[str, Any] | None:
-    """Try to get Castor capabilities from the current proxy context."""
+def _get_castor_budgets() -> dict[str, Any] | None:
+    """Try to get Castor budgets from the current proxy context."""
     try:
         from castor.lib._context import get_proxy
         proxy = get_proxy()
-        return proxy.checkpoint.capabilities
+        return proxy.checkpoint.capabilities  # Castor calls these "capabilities" but they're budget counters
     except (RuntimeError, ImportError):
         return None
 
@@ -36,13 +36,13 @@ def _build_wallet(
     timeout_secs: int,
     provider: str | None,
 ) -> CapabilityWallet:
-    """Build a wallet from intent analysis + Castor capabilities (if available)."""
+    """Build a wallet from intent analysis + Castor budgets (if available)."""
     intent = analyze(code, language)
-    caps = _get_castor_capabilities()
+    budgets = _get_castor_budgets()
 
-    if caps:
-        # Inside Castor — translate Castor budgets to wallet
-        wallet = from_castor_capabilities(caps)
+    if budgets:
+        # Inside Castor — derive partial wallet from budget counters
+        wallet = from_castor_budgets(budgets)
     else:
         # Standalone — build wallet from intent
         wallet = CapabilityWallet()
