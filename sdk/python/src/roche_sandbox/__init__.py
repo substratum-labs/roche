@@ -9,7 +9,7 @@ from roche_sandbox.client import AsyncRoche, Roche
 from roche_sandbox.decorator import roche_sandbox
 from roche_sandbox.intent import CodeIntent, analyze
 from roche_sandbox.wallet import (
-    CapabilityWallet, NetworkCap, FilesystemCap, ComputeCap,
+    SandboxGrant, NetworkCap, FilesystemCap, ComputeCap,
     SecretsCap, OutputCap, UsageReport, run_with_wallet,
     from_castor_budgets, from_castor_capabilities, to_castor_usage,
 )
@@ -67,7 +67,7 @@ __all__ = [
     "delete_snapshot",
     "async_snapshot",
     "async_restore",
-    "CapabilityWallet",
+    "SandboxGrant",
     "NetworkCap",
     "FilesystemCap",
     "ComputeCap",

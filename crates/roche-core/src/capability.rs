@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Substratum Labs
 
-//! Capability Wallet — the agent sandbox specification.
+//! SandboxGrant — the agent sandbox specification.
 //!
-//! A CapabilityWallet declares what an agent is allowed to do inside a sandbox.
+//! A SandboxGrant declares what an agent is allowed to do inside a sandbox.
 //! It is Roche's equivalent of the OCI runtime spec, but at the capability
 //! level rather than the resource level.
 //!
@@ -48,7 +48,7 @@ use serde::{Deserialize, Serialize};
 /// This follows the principle of least privilege: everything is off by default,
 /// explicitly enabled capabilities are the only things allowed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CapabilityWallet {
+pub struct SandboxGrant {
     /// Network capabilities.
     #[serde(default)]
     pub network: NetworkCapability,
@@ -198,7 +198,7 @@ pub struct UsageReport {
 // Conversions: Wallet ↔ existing types
 // ---------------------------------------------------------------------------
 
-impl CapabilityWallet {
+impl SandboxGrant {
     /// Convert to SandboxConfig for creating a sandbox.
     pub fn to_sandbox_config(&self) -> crate::types::SandboxConfig {
         use crate::types::SandboxConfig;
@@ -272,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_default_wallet_is_fully_locked() {
-        let w = CapabilityWallet::default();
+        let w = SandboxGrant::default();
         assert!(!w.network.enabled);
         assert!(!w.filesystem.writable);
         assert_eq!(w.compute.max_exec_count, 0); // unlimited
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_wallet_to_sandbox_config() {
-        let w = CapabilityWallet {
+        let w = SandboxGrant {
             network: NetworkCapability {
                 enabled: true,
                 allowed_hosts: vec!["api.openai.com".into()],
@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_serde_roundtrip() {
-        let w = CapabilityWallet {
+        let w = SandboxGrant {
             network: NetworkCapability {
                 enabled: true,
                 allowed_hosts: vec!["pypi.org".into()],
@@ -326,7 +326,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&w).unwrap();
-        let parsed: CapabilityWallet = serde_json::from_str(&json).unwrap();
+        let parsed: SandboxGrant = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed.network.allowed_hosts, vec!["pypi.org"]);
         assert_eq!(parsed.compute.max_exec_count, 50);

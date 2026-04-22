@@ -15,7 +15,7 @@ from roche_sandbox.client import AsyncRoche
 from roche_sandbox.intent import analyze
 from roche_sandbox.run import RunOptions, async_run
 from roche_sandbox.wallet import (
-    CapabilityWallet, NetworkCap, FilesystemCap, ComputeCap, OutputCap,
+    SandboxGrant, NetworkCap, FilesystemCap, ComputeCap, OutputCap,
     run_with_wallet, from_castor_budgets, to_castor_usage, UsageReport,
 )
 
@@ -35,7 +35,7 @@ def _build_wallet(
     language: str,
     timeout_secs: int,
     provider: str | None,
-) -> CapabilityWallet:
+) -> SandboxGrant:
     """Build a wallet from intent analysis + Castor budgets (if available)."""
     intent = analyze(code, language)
     budgets = _get_castor_budgets()
@@ -45,7 +45,7 @@ def _build_wallet(
         wallet = from_castor_budgets(budgets)
     else:
         # Standalone — build wallet from intent
-        wallet = CapabilityWallet()
+        wallet = SandboxGrant()
 
     # Intent analysis enriches the wallet
     if intent.needs_network:

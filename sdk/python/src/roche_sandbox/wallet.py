@@ -10,9 +10,9 @@ Docker isolates processes (namespaces + cgroups).
 Roche isolates agents (capability wallet = what the agent can *do*).
 
 Usage:
-    from roche_sandbox.wallet import CapabilityWallet, run_with_wallet
+    from roche_sandbox.wallet import SandboxGrant, run_with_wallet
 
-    wallet = CapabilityWallet(
+    wallet = SandboxGrant(
         network=NetworkCap(enabled=True, allowed_hosts=["api.openai.com"]),
         compute=ComputeCap(max_exec_count=10, max_duration_secs=60),
     )
@@ -63,7 +63,7 @@ class OutputCap:
 
 
 @dataclass
-class CapabilityWallet:
+class SandboxGrant:
     """Declares what an agent can do inside a sandbox.
 
     Default = fully locked: no network, no writes, no secrets.
@@ -100,7 +100,7 @@ class UsageReport:
 
 
 async def run_with_wallet(
-    wallet: CapabilityWallet,
+    wallet: SandboxGrant,
     code: str,
     *,
     language: str = "auto",
@@ -180,8 +180,8 @@ def _bytes_to_memory_str(b: int) -> str:
 def from_castor_budgets(
     budgets: dict[str, object],
     tool_meta: object | None = None,
-) -> CapabilityWallet:
-    """Roche-side helper: derive a partial CapabilityWallet from Castor budget signals.
+) -> SandboxGrant:
+    """Roche-side helper: derive a partial SandboxGrant from Castor budget signals.
 
     This is NOT a jointly-owned protocol. Castor's Budget API only provides
     quantitative resource counters (compute / network / disk / api). A real
@@ -201,7 +201,7 @@ def from_castor_budgets(
                  max_budget/current_usage fields).
         tool_meta: Optional Castor ToolMetadata for additional hints.
     """
-    wallet = CapabilityWallet()
+    wallet = SandboxGrant()
 
     for resource_type, budget in budgets.items():
         remaining = _budget_remaining(budget)

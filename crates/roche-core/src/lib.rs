@@ -17,7 +17,7 @@ pub use types::{
 
 // Capability Wallet — the agent sandbox spec
 pub use capability::{
-    CapabilityWallet, ComputeCapability, FilesystemCapability, NetworkCapability,
+    SandboxGrant, ComputeCapability, FilesystemCapability, NetworkCapability,
     OutputCapability, SecretsCapability, UsageReport,
 };
 
