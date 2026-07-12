@@ -2585,7 +2585,7 @@ dependencies = [
 
 [[package]]
 name = "roche-cli"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "clap",
  "dirs 6.0.0",
@@ -2601,7 +2601,7 @@ dependencies = [
 
 [[package]]
 name = "roche-core"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "base64 0.22.1",
  "dirs 6.0.0",
@@ -2628,7 +2628,7 @@ dependencies = [
 
 [[package]]
 name = "roche-daemon"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "clap",
  "dirs 6.0.0",
@@ -2637,6 +2637,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-stream",
  "toml",
  "tonic",
  "tonic-build",
