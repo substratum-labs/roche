@@ -1,1 +1,1 @@
-../../substratum-internal/agent-md/argus.md
+../substratum-internal/agent-md/argus.md
