@@ -221,9 +221,7 @@ impl SandboxGrant {
             .secrets
             .allowed_env_keys
             .iter()
-            .filter_map(|key| {
-                std::env::var(key).ok().map(|val| (key.clone(), val))
-            })
+            .filter_map(|key| std::env::var(key).ok().map(|val| (key.clone(), val)))
             .collect();
 
         SandboxConfig {
